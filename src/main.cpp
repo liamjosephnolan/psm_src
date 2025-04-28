@@ -224,7 +224,7 @@ void loop() {
     RCSOFTCHECK(rcl_publish(&sensor_data_publisher, &sensor_data_msg, NULL));
 
     // 2. Process incoming ROS messages
-    RCSOFTCHECK(rclc_executor_spin_some(&executor, 0));
+    RCSOFTCHECK(rclc_executor_spin_some(&executor, 10));
 
     actual_positions[0] = Ax1toAngle(Enc1.read());
     actual_positions[1] = Ax2toAngle(Enc2.read());
