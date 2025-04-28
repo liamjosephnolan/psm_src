@@ -95,10 +95,10 @@ void init_joint_telemetry_message() {
     
     for (size_t i = 0; i < 3; i++) {
         rosidl_runtime_c__String__init(&joint_telemetry_msg.name.data[i]);
-        joint_telemetry_msg.name.data[i].data = (char *)malloc(20);
+        joint_telemetry_msg.name.data[i].data = (char *)malloc(strlen(joint_names[i]) + 1); // Allocate exact size
         joint_telemetry_msg.name.data[i].size = strlen(joint_names[i]);
-        joint_telemetry_msg.name.data[i].capacity = 20;
-        memcpy(joint_telemetry_msg.name.data[i].data, joint_names[i], joint_telemetry_msg.name.data[i].size);
+        joint_telemetry_msg.name.data[i].capacity = strlen(joint_names[i]) + 1;
+        strcpy(joint_telemetry_msg.name.data[i].data, joint_names[i]); // Copy the name
     }
 
     // Initialize arrays
