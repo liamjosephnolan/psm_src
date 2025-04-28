@@ -74,19 +74,11 @@ void joint_state_callback(const void *msgin) {
 
 void target_pose_callback(const void *msgin) {
     const geometry_msgs__msg__PoseStamped *msg = (const geometry_msgs__msg__PoseStamped *)msgin;
-    double x = msg->pose.position.x;
-    double y = msg->pose.position.y;
-    double z = msg->pose.position.z;
 
-    JointAngles desiredAngles = computePSMJointAngles(x, y, z);
-
-    char debugBuf[128];
-    snprintf(debugBuf, sizeof(debugBuf), "Desired Angles -> q1: %.2f, q2: %.2f, q3: %.2f",
-             desiredAngles.q1, desiredAngles.q2, desiredAngles.q3);
-    publish_debug_message(debugBuf);
-
-    PIDupdate(&desiredAngles.q1, 0, "PID", 20.0f, 50.0f, 0.50f);
-    PIDupdate(&desiredAngles.q2, 1, "PI", 60.0f, 110.0f, 0.50f);
+    // Update the target pose message
+    target_pose_msg.pose.position.x = msg->pose.position.x;
+    target_pose_msg.pose.position.y = msg->pose.position.y;
+    target_pose_msg.pose.position.z = msg->pose.position.z;
 }
 
 // ----------------------
@@ -144,7 +136,7 @@ void publish_joint_telemetry(double* actual_positions, double* commanded_positio
 // Setup Function
 // ----------------------
 void setup() {
-    Serial.begin(115200);
+    Serial.begin(921600);
     set_microros_serial_transports(Serial);
     delay(2000);
 
@@ -238,12 +230,13 @@ void loop() {
     actual_positions[1] = Ax2toAngle(Enc2.read());
     actual_positions[2] = Ax3toAngle(Enc3.read());
 
-    // 5. Control logic
+
     JointAngles desiredAngles = computePSMJointAngles(
         target_pose_msg.pose.position.x,
         target_pose_msg.pose.position.y,
         target_pose_msg.pose.position.z
     );
+
 
     PIDupdate(&desiredAngles.q1, 0, "PID", 20.0f, 50.0f, 0.50f);
     PIDupdate(&desiredAngles.q2, 1, "PI", 60.0f, 110.0f, 0.50f);
