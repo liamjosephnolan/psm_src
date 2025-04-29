@@ -1,6 +1,7 @@
 #include <Arduino.h>
 #include "config.h"
 
+
 // ----------------------
 // Global ROS 2 Objects
 // ----------------------
@@ -75,10 +76,11 @@ void joint_state_callback(const void *msgin) {
 void target_pose_callback(const void *msgin) {
     const geometry_msgs__msg__PoseStamped *msg = (const geometry_msgs__msg__PoseStamped *)msgin;
 
-    // Update the target pose message
-    target_pose_msg.pose.position.x = msg->pose.position.x;
-    target_pose_msg.pose.position.y = msg->pose.position.y;
-    target_pose_msg.pose.position.z = msg->pose.position.z;
+    // Directly copy into your commanded_positions buffer
+    commanded_positions[0] = msg->pose.position.x;
+    commanded_positions[1] = msg->pose.position.y;
+    commanded_positions[2] = msg->pose.position.z;
+
 }
 
 // ----------------------
@@ -173,10 +175,19 @@ void setup() {
         ROSIDL_GET_MSG_TYPE_SUPPORT(sensor_msgs, msg, JointState),
         "/mtm_joint_states"));
 
-    RCCHECK(rclc_subscription_init_default(
+    rcl_subscription_options_t subscription_options = rcl_subscription_get_default_options();
+    subscription_options.qos.reliability = RMW_QOS_POLICY_RELIABILITY_RELIABLE; // Ensure reliable delivery
+    subscription_options.qos.durability = RMW_QOS_POLICY_DURABILITY_VOLATILE;   // No need for late-joining subscribers
+    subscription_options.qos.history = RMW_QOS_POLICY_HISTORY_KEEP_LAST;        // Keep only the last few messages
+    subscription_options.qos.depth = 20;                                       // Queue depth of 10 messages
+    subscription_options.qos.deadline.sec = 0;                                 // Deadline of 10 ms
+    subscription_options.qos.deadline.nsec = 10000000;                         // (10 ms in nanoseconds)
+    subscription_options.qos.liveliness = RMW_QOS_POLICY_LIVELINESS_AUTOMATIC; // Default liveliness
+
+    RCCHECK(rcl_subscription_init(
         &target_pose_subscriber, &node,
         ROSIDL_GET_MSG_TYPE_SUPPORT(geometry_msgs, msg, PoseStamped),
-        "/target_pose"));
+        "/target_pose", &subscription_options));
 
     RCCHECK(rclc_publisher_init_default(
         &sensor_data_publisher, &node,
@@ -206,7 +217,7 @@ void setup() {
     init_joint_telemetry_message();
 
     // Executor setup
-    RCCHECK(rclc_executor_init(&executor, &support.context, 2, &allocator));
+    RCCHECK(rclc_executor_init(&executor, &support.context, 2, &allocator)); 
     RCCHECK(rclc_executor_add_subscription(
         &executor, &joint_state_subscriber, &received_joint_state, &joint_state_callback, ON_NEW_DATA));
     RCCHECK(rclc_executor_add_subscription(
@@ -231,17 +242,19 @@ void loop() {
     actual_positions[2] = Ax3toAngle(Enc3.read());
 
 
-    JointAngles desiredAngles = computePSMJointAngles(
-        target_pose_msg.pose.position.x,
-        target_pose_msg.pose.position.y,
-        target_pose_msg.pose.position.z
-    );
+    // // Compute desired angles based on target pose
+    // JointAngles desiredAngles = computePSMJointAngles(
+    //     target_pose_msg.pose.position.x,
+    //     target_pose_msg.pose.position.y,
+    //     target_pose_msg.pose.position.z
+    // );
 
+    // // Update PID controllers
+    // PIDupdate(&desiredAngles.q1, 0, "PID", 20.0f, 50.0f, 0.50f);
+    // PIDupdate(&desiredAngles.q2, 1, "PI", 60.0f, 110.0f, 0.50f);
 
-    PIDupdate(&desiredAngles.q1, 0, "PID", 20.0f, 50.0f, 0.50f);
-    PIDupdate(&desiredAngles.q2, 1, "PI", 60.0f, 110.0f, 0.50f);
-
+    // Publish telemetry
     publish_joint_telemetry(actual_positions, commanded_positions, commanded_speeds);
 
-    delay(10);
+    delay(10); // Maintain loop timing
 }

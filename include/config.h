@@ -28,6 +28,8 @@
 #include <std_msgs/msg/string.h>
 #include <geometry_msgs/msg/pose_stamped.h>
 #include <rosidl_runtime_c/string_functions.h>
+#include <rmw/qos_profiles.h>  // for rmw_qos_profile_default
+
 
 // ----------------------
 // C/C++ Standard Libraries
