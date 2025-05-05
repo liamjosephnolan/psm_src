@@ -249,9 +249,9 @@ void loop() {
     //     target_pose_msg.pose.position.z
     // );
 
-    // // Update PID controllers
-    // PIDupdate(&desiredAngles.q1, 0, "PID", 20.0f, 50.0f, 0.50f);
-    // PIDupdate(&desiredAngles.q2, 1, "PI", 60.0f, 110.0f, 0.50f);
+    // Update PID controllers
+    PIDupdate(0, 0, "PID", 20.0f, 50.0f, 0.50f);
+    PIDupdate(0, 1, "PI", 60.0f, 110.0f, 0.50f);
 
     // Publish telemetry
     publish_joint_telemetry(actual_positions, commanded_positions, commanded_speeds);
