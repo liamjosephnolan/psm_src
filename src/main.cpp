@@ -227,7 +227,7 @@ void setup() {
     RCCHECK(rclc_executor_add_subscription(
         &executor, &target_pose_subscriber, &target_pose_msg, &target_pose_callback, ON_NEW_DATA));
 
-    home_motors();
+    // home_motors();
  }
 
 // ----------------------
@@ -256,18 +256,17 @@ void loop() {
     // );
     static unsigned long start_time = millis();
     static bool speed_adjusted = false;
-    float target_angle = 0;
-    if (millis() - start_time < 10000) {
-        roll_voltage = PIDupdate(&target_angle, 0, "PID", 20.0f, 50.0f, 0.0f);
-        pitch_voltage = PIDupdate(&target_angle, 1, "PI", 40.0f, 100.0f, 0.0f);
+    static float pitch_speed = -80.0f;
+    if (millis() - start_time < 5000) {
+        commanded_speeds[1] = pitch_speed;
+        motor2.setSpeed(static_cast<int16_t>(pitch_speed)); // Motor 2 corresponds to pitch
     } else {
         if (!speed_adjusted){
-            roll_voltage = roll_voltage * 2.0;
+            pitch_speed = pitch_speed * 1.5;
             speed_adjusted = true;
         }
-        commanded_speeds[0] = roll_voltage;
-        motor1.setSpeed(static_cast<int16_t>(roll_voltage)); // Motor 1 corresponds to roll
-        pitch_voltage = PIDupdate(&target_angle, 1, "PI", 50.0f, 110.0f, 0.0f);
+        commanded_speeds[1] = pitch_speed;
+        motor2.setSpeed(static_cast<int16_t>(pitch_speed)); // Motor 2 corresponds to pitch
     }
 
 
