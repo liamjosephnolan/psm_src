@@ -257,19 +257,17 @@ void loop() {
     static unsigned long start_time = millis();
     static bool speed_adjusted = false;
     float target_angle = 0;
-    if (millis() - start_time < 5000) {
+    if (millis() - start_time < 10000) {
         roll_voltage = PIDupdate(&target_angle, 0, "PID", 20.0f, 50.0f, 0.0f);
-        pitch_voltage = PIDupdate(&target_angle, 1, "PI", 60.0f, 110.0f, 0.0f);
+        pitch_voltage = PIDupdate(&target_angle, 1, "PI", 40.0f, 100.0f, 0.0f);
     } else {
         if (!speed_adjusted){
-            roll_voltage = roll_voltage*1.25;
-            pitch_voltage = pitch_voltage*1.25;
+            roll_voltage = roll_voltage * 2.0;
             speed_adjusted = true;
         }
         commanded_speeds[0] = roll_voltage;
-        commanded_speeds[1] = pitch_voltage;
         motor1.setSpeed(static_cast<int16_t>(roll_voltage)); // Motor 1 corresponds to roll
-        motor2.setSpeed(static_cast<int16_t>(pitch_voltage)); // Motor 2 corresponds to pitch
+        pitch_voltage = PIDupdate(&target_angle, 1, "PI", 50.0f, 110.0f, 0.0f);
     }
 
 

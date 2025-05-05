@@ -116,8 +116,7 @@ float PIDupdate(float* target, int index, String mode, float kp, float ki, float
     // Determine speed
     speed = (int)fabs(u);
 
-    // Publish Speed
-    commanded_speeds[index] = static_cast<double>(speed);
+ 
     
     // Limit speed to maximum value
     if (speed > 100) {
@@ -133,6 +132,9 @@ float PIDupdate(float* target, int index, String mode, float kp, float ki, float
 
     // Set motor speed
     motor[index].setSpeed(dir * speed);
+
+    // Publish Speed
+    commanded_speeds[index] = static_cast<double>(dir* speed);
 
     // Return voltage as dir * speed
     return dir * speed;
