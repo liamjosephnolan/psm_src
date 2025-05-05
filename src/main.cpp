@@ -224,12 +224,14 @@ void setup() {
         &executor, &target_pose_subscriber, &target_pose_msg, &target_pose_callback, ON_NEW_DATA));
 
     home_motors();
-}
+ }
 
 // ----------------------
 // Loop Function
 // ----------------------
 void loop() {
+
+
     // 1. Read sensor data
     read_encoder_data(&sensor_data_msg);
     RCSOFTCHECK(rcl_publish(&sensor_data_publisher, &sensor_data_msg, NULL));
@@ -248,13 +250,19 @@ void loop() {
     //     target_pose_msg.pose.position.y,
     //     target_pose_msg.pose.position.z
     // );
-
+    static unsigned long start_time = millis();
 
     float target_angle = 0;
+    if (millis() - start_time < 5000) {
+        PIDupdate(&target_angle, 0, "PID", 20.0f, 50.0f, 0.0f);
+        PIDupdate(&target_angle, 1, "PI", 60.0f, 110.0f, 0.0f);
+    }
 
-    // Update PID controllers
-    PIDupdate(&target_angle, 0, "PID", 20.0f, 50.0f, 0.50f);
-    PIDupdate(&target_angle, 1, "PI", 60.0f, 110.0f, 0.50f);
+
+
+
+
+
 
     // Publish telemetry
     publish_joint_telemetry(actual_positions, commanded_positions, commanded_speeds);
