@@ -20,7 +20,7 @@ float Ax1toAngle(long count) {
 // Converts encoder counts to angle (degrees) for Axis 2
 float Ax2toAngle(long count) {
     float trans = 13.333; // Gear reduction ratio
-    return ((-1) * ((float)count / (res_avago * trans) * 360.0)) - 30;
+    return ((-1) * ((float)count / (res_avago * trans) * 360.0)) - 35;
 }
 
 // Converts encoder counts to position (mm) for Axis 3
