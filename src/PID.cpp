@@ -18,7 +18,7 @@ int m_speed[3] = {0, 0, 0}; // Motor speeds for each axis
 // ----------------------
 
 // Updates the PID controller for a given axis
-void PIDupdate(float* target, int index, String mode, float kp, float ki, float kd) {
+float PIDupdate(float* target, int index, String mode, float kp, float ki, float kd) {
     // Function variables
     float current;
     int PID_select;
@@ -133,4 +133,7 @@ void PIDupdate(float* target, int index, String mode, float kp, float ki, float 
 
     // Set motor speed
     motor[index].setSpeed(dir * speed);
+
+    // Return voltage as dir * speed
+    return dir * speed;
 }

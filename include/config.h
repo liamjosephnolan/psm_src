@@ -101,6 +101,10 @@ extern float sat_control_values[3];
 extern bool clamp_I[3];
 extern int m_speed[3];
 
+// Voltage variables for motors
+extern int16_t roll_voltage;
+extern int16_t pitch_voltage;
+
 // Motor objects
 extern CytronMD motor[3];
 
@@ -153,6 +157,6 @@ extern void read_encoder_data(std_msgs__msg__Int32MultiArray *msg);
 
 // Motor control
 extern void home_motors();
-extern void PIDupdate(float *target, int index, String mode, float kp, float ki, float kd);
+extern float PIDupdate(float *target, int index, String mode, float kp, float ki, float kd);
 
 #endif // CONFIG_H
