@@ -15,7 +15,6 @@
 #include <Encoder.h>
 #include <Servo.h>
 #include "CytronMotorDriver.h"
-#include "encoder_lp.cpp"
 
 // ----------------------
 // ROS 2 and micro-ROS Libraries
