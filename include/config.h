@@ -145,6 +145,9 @@ extern float Ax1toAngle(long count);
 extern float Ax2toAngle(long count);
 extern float Ax3toAngle(long count);
 
+// Declare the LQR function
+float compute_LQR_control(float* gains, float commanded_position, float actual_position);
+
 // Helper functions
 extern void publish_debug_message(const char *message);
 extern int map_gimbal_to_servo(double gimbal_angle, double gimbal_min, double gimbal_max, double max_angle, double min_angle);

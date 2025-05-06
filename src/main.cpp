@@ -227,8 +227,8 @@ void setup() {
     RCCHECK(rclc_executor_add_subscription(
         &executor, &target_pose_subscriber, &target_pose_msg, &target_pose_callback, ON_NEW_DATA));
 
-    // home_motors();
-    delay(1000); // Delay for ease of use
+    home_motors();
+    delay(5000); // Delay for ease of use
 
  }
 
@@ -236,35 +236,41 @@ void setup() {
 // Loop Function
 // ----------------------
 void loop() {
-    static unsigned long last_update_time = 0; // Tracks the last time pitch_speed was updated
-    static float pitch_speed = 0.0f;          // Start pitch_speed at 0
 
-    // 1. Read raw sensor data (no filtering)
-    read_encoder_data(&sensor_data_msg);
-    RCSOFTCHECK(rcl_publish(&sensor_data_publisher, &sensor_data_msg, NULL));
-
-    // 2. Process incoming ROS messages
-    RCSOFTCHECK(rclc_executor_spin_some(&executor, 10));
-
-    // 3. Read filtered encoder values
+    // 1. Read filtered encoder values
     actual_positions[0] = Ax1toAngle(read_filtered_encoder(0)); // Roll
     actual_positions[1] = Ax2toAngle(read_filtered_encoder(1)); // Pitch
     actual_positions[2] = Ax3toAngle(read_filtered_encoder(2)); // Insertion
 
-    // 4. Update pitch_speed every 100ms
-    unsigned long current_time = millis();
-    if (current_time - last_update_time >= 100) { // Check if 100ms has passed
-        pitch_speed -= 1.0f;                      // Increase pitch_speed by 1
-        last_update_time = current_time;         // Update the last update time
-    }
+    // Example LQR gains
+    float lqr_gains[2] = {13.4570f,    3.3627f}; // Gains for position error and velocity
 
-    // 5. Set motor speed
-    commanded_speeds[1] = pitch_speed;
-    motor2.setSpeed(static_cast<int16_t>(pitch_speed)); // Motor 2 corresponds to pitch
+    // Set the commanded position for the roll axis
+    float commanded_position = 0.0f; // Example commanded position (e.g., 45 degrees)
 
-    // 6. Publish telemetry
+    // Compute the LQR control input for the roll axis
+    float commanded_speed = compute_LQR_control(
+        lqr_gains, 
+        commanded_position, 
+        actual_positions[0] // Actual position (roll)
+    );
+
+
+    // Apply the commanded speed to motor1
+    motor1.setSpeed(static_cast<int16_t>(commanded_speed));
+
+    commanded_speeds[0] = commanded_speed; // Store commanded speed for telemetry
+
+    // 2. Read raw sensor data (no filtering)
+    read_encoder_data(&sensor_data_msg);
+    RCSOFTCHECK(rcl_publish(&sensor_data_publisher, &sensor_data_msg, NULL));
+
+    // 3. Process incoming ROS messages
+    RCSOFTCHECK(rclc_executor_spin_some(&executor, 10));
+
+    // 4. Publish telemetry
     publish_joint_telemetry(actual_positions, commanded_positions, commanded_speeds);
 
-    // 7. Maintain loop timing
+    // 5. Maintain loop timing
     delay(10); // Optional: Small delay to prevent excessive CPU usage
 }

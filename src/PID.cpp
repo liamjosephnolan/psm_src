@@ -119,8 +119,8 @@ float PIDupdate(float* target, int index, String mode, float kp, float ki, float
  
     
     // Limit speed to maximum value
-    if (speed > 255) {
-        speed = 255;
+    if (speed > 150) {
+        speed = 150;
     }
 
     // Minimum speed for Axis 3
