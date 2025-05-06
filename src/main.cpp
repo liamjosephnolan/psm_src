@@ -228,36 +228,43 @@ void setup() {
         &executor, &target_pose_subscriber, &target_pose_msg, &target_pose_callback, ON_NEW_DATA));
 
     // home_motors();
+    delay(1000); // Delay for ease of use
+
  }
 
 // ----------------------
 // Loop Function
 // ----------------------
 void loop() {
+    static unsigned long last_update_time = 0; // Tracks the last time pitch_speed was updated
+    static float pitch_speed = 0.0f;          // Start pitch_speed at 0
 
-
-    // 1. Read sensor data
+    // 1. Read raw sensor data (no filtering)
     read_encoder_data(&sensor_data_msg);
     RCSOFTCHECK(rcl_publish(&sensor_data_publisher, &sensor_data_msg, NULL));
 
     // 2. Process incoming ROS messages
     RCSOFTCHECK(rclc_executor_spin_some(&executor, 10));
 
-    
-    // Read filtered encoder values
-    actual_positions[0] = read_filtered_encoder(0); // Roll
-    actual_positions[1] = read_filtered_encoder(1); // Pitch
-    actual_positions[2] = read_filtered_encoder(2); // Insertion
+    // 3. Read filtered encoder values
+    actual_positions[0] = Ax1toAngle(read_filtered_encoder(0)); // Roll
+    actual_positions[1] = Ax2toAngle(read_filtered_encoder(1)); // Pitch
+    actual_positions[2] = Ax3toAngle(read_filtered_encoder(2)); // Insertion
 
+    // 4. Update pitch_speed every 100ms
+    unsigned long current_time = millis();
+    if (current_time - last_update_time >= 100) { // Check if 100ms has passed
+        pitch_speed -= 1.0f;                      // Increase pitch_speed by 1
+        last_update_time = current_time;         // Update the last update time
+    }
 
-
-    static float pitch_speed = -50.0f;
+    // 5. Set motor speed
     commanded_speeds[1] = pitch_speed;
     motor2.setSpeed(static_cast<int16_t>(pitch_speed)); // Motor 2 corresponds to pitch
 
-
-    // Publish telemetry
+    // 6. Publish telemetry
     publish_joint_telemetry(actual_positions, commanded_positions, commanded_speeds);
 
-    delay(10); // Maintain loop timing
+    // 7. Maintain loop timing
+    delay(10); // Optional: Small delay to prevent excessive CPU usage
 }
