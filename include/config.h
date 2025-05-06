@@ -15,6 +15,7 @@
 #include <Encoder.h>
 #include <Servo.h>
 #include "CytronMotorDriver.h"
+#include "encoder_lp.cpp"
 
 // ----------------------
 // ROS 2 and micro-ROS Libraries
@@ -82,6 +83,9 @@
 
 #define JOINT_NAME_MAX 10
 #define NAME_LENGTH_MAX 30
+
+// Low-pass filter constant (tunable)
+#define LPF_ALPHA 0.1f // Alpha value for the low-pass filter (0 < LPF_ALPHA <= 1)
 
 // ----------------------
 // Global/External Variables
@@ -158,5 +162,8 @@ extern void read_encoder_data(std_msgs__msg__Int32MultiArray *msg);
 // Motor control
 extern void home_motors();
 extern float PIDupdate(float *target, int index, String mode, float kp, float ki, float kd);
+
+// Declare the function so it can be called from anywhere
+float read_filtered_encoder(int index);
 
 #endif // CONFIG_H

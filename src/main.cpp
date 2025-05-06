@@ -243,36 +243,17 @@ void loop() {
     // 2. Process incoming ROS messages
     RCSOFTCHECK(rclc_executor_spin_some(&executor, 10));
 
-    actual_positions[0] = Ax1toAngle(Enc1.read());
-    actual_positions[1] = Ax2toAngle(Enc2.read());
-    actual_positions[2] = Ax3toAngle(Enc3.read());
-
-
-    // // Compute desired angles based on target pose
-    // JointAngles desiredAngles = computePSMJointAngles(
-    //     target_pose_msg.pose.position.x,
-    //     target_pose_msg.pose.position.y,
-    //     target_pose_msg.pose.position.z
-    // );
-    static unsigned long start_time = millis();
-    static bool speed_adjusted = false;
-    static float pitch_speed = -80.0f;
-    if (millis() - start_time < 5000) {
-        commanded_speeds[1] = pitch_speed;
-        motor2.setSpeed(static_cast<int16_t>(pitch_speed)); // Motor 2 corresponds to pitch
-    } else {
-        if (!speed_adjusted){
-            pitch_speed = pitch_speed * 1.5;
-            speed_adjusted = true;
-        }
-        commanded_speeds[1] = pitch_speed;
-        motor2.setSpeed(static_cast<int16_t>(pitch_speed)); // Motor 2 corresponds to pitch
-    }
+    
+    // Read filtered encoder values
+    actual_positions[0] = read_filtered_encoder(0); // Roll
+    actual_positions[1] = read_filtered_encoder(1); // Pitch
+    actual_positions[2] = read_filtered_encoder(2); // Insertion
 
 
 
-
-
+    static float pitch_speed = -50.0f;
+    commanded_speeds[1] = pitch_speed;
+    motor2.setSpeed(static_cast<int16_t>(pitch_speed)); // Motor 2 corresponds to pitch
 
 
     // Publish telemetry
