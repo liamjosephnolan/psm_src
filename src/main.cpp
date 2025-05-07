@@ -236,25 +236,29 @@ void setup() {
 // Loop Function
 // ----------------------
 void loop() {
+    static unsigned long start_time = millis(); // Record the start time
 
+    // Calculate the elapsed time in seconds
+    float elapsed_time = (millis() - start_time) / 1000.0f;
+
+    // Calculate the sinusoidal target position
+    float target_position = 5.0f * sin((2.0f * PI / 5.0f) * elapsed_time); // Amplitude = 5, Period = 5 seconds
+    commanded_positions[0] = target_position; // Update commanded position for telemetry
+    
     // 1. Read filtered encoder values
     actual_positions[0] = Ax1toAngle(read_filtered_encoder(0)); // Roll
     actual_positions[1] = Ax2toAngle(Enc2.read()); // Pitch
     actual_positions[2] = Ax3toAngle(Enc3.read()); // Insertion
 
-    // Example LQR gains2
-    float lqr_gains[2] = {138.4351f,    2.8778f}; // Gains for position error and velocity
-
-    // Set the commanded position for the roll axis
-    float commanded_position = -0.0f; // Example commanded position (e.g., 45 degrees)
+    // Example LQR gains
+    float lqr_gains[2] = {227.9252f,    2.8778f}; // Gains for position error and velocity
 
     // Compute the LQR control input for the roll axis
     float roll_speed = compute_LQR_control(
         lqr_gains, 
-        commanded_position, 
+        target_position, 
         actual_positions[0] // Actual position (roll)
     );
-
 
     // Apply the commanded speed to motor1
     motor1.setSpeed(static_cast<int16_t>(roll_speed));
