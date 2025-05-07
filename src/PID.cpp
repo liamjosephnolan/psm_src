@@ -47,17 +47,17 @@ float PIDupdate(float* target, int index, String mode, float kp, float ki, float
     // Choose parameters based on index
     switch (index) {
         case 0: // Axis 1
-            current = Ax1toAngle(read_filtered_encoder(0));
+            current = Ax1toAngle(Enc1.read());
             clamp_Lim_up = 32;
             clamp_Lim_low = -32;
             break;
         case 1: // Axis 2
-            current = Ax2toAngle(read_filtered_encoder(1));
+            current = Ax2toAngle(Enc2.read());
             clamp_Lim_up = 20;
             clamp_Lim_low = -36;
             break;
         case 2: // Axis 3
-            current = Ax3toAngle(read_filtered_encoder(2));
+            current = Ax3toAngle(Enc3.read());
             clamp_Lim_up = 7;
             clamp_Lim_low = -7;
             break;

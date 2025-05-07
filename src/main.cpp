@@ -238,9 +238,9 @@ void setup() {
 void loop() {
 
     // 1. Read filtered encoder values
-    actual_positions[0] = Ax1toAngle(read_filtered_encoder(0)); // Roll
-    actual_positions[1] = Ax2toAngle(read_filtered_encoder(1)); // Pitch
-    actual_positions[2] = Ax3toAngle(read_filtered_encoder(2)); // Insertion
+    actual_positions[0] = Ax1toAngle(Enc1.read()); // Roll
+    actual_positions[1] = Ax2toAngle(Enc2.read()); // Pitch
+    actual_positions[2] = Ax3toAngle(Enc3.read()); // Insertion
 
     // Example LQR gains
     float lqr_gains[2] = {13.4570f,    3.3627f}; // Gains for position error and velocity
@@ -249,7 +249,7 @@ void loop() {
     float commanded_position = 0.0f; // Example commanded position (e.g., 45 degrees)
 
     // Compute the LQR control input for the roll axis
-    float commanded_speed = compute_LQR_control(
+    float roll_speed = compute_LQR_control(
         lqr_gains, 
         commanded_position, 
         actual_positions[0] // Actual position (roll)
@@ -257,9 +257,9 @@ void loop() {
 
 
     // Apply the commanded speed to motor1
-    motor1.setSpeed(static_cast<int16_t>(commanded_speed));
+    motor1.setSpeed(static_cast<int16_t>(roll_speed));
 
-    commanded_speeds[0] = commanded_speed; // Store commanded speed for telemetry
+    commanded_speeds[0] = roll_speed; // Store commanded speed for telemetry
 
     // 2. Read raw sensor data (no filtering)
     read_encoder_data(&sensor_data_msg);
