@@ -228,7 +228,7 @@ void setup() {
         &executor, &target_pose_subscriber, &target_pose_msg, &target_pose_callback, ON_NEW_DATA));
 
     home_motors();
-    delay(5000); // Delay for ease of use
+    delay(2500); // Delay for ease of use
 
  }
 
@@ -251,7 +251,7 @@ void loop() {
     actual_positions[2] = Ax3toAngle(Enc3.read()); // Insertion
 
     // Example LQR gains
-    float lqr_gains[2] = {227.9252f,    2.8778f}; // Gains for position error and velocity
+    float lqr_gains[2] = {255.1886f,    4.0860f}; // Gains for position error and velocity
 
     // Compute the LQR control input for the roll axis
     float roll_speed = compute_LQR_control(
