@@ -238,15 +238,15 @@ void setup() {
 void loop() {
 
     // 1. Read filtered encoder values
-    actual_positions[0] = Ax1toAngle(Enc1.read()); // Roll
+    actual_positions[0] = Ax1toAngle(read_filtered_encoder(0)); // Roll
     actual_positions[1] = Ax2toAngle(Enc2.read()); // Pitch
     actual_positions[2] = Ax3toAngle(Enc3.read()); // Insertion
 
-    // Example LQR gains
-    float lqr_gains[2] = {13.4570f,    3.3627f}; // Gains for position error and velocity
+    // Example LQR gains2
+    float lqr_gains[2] = {138.4351f,    2.8778f}; // Gains for position error and velocity
 
     // Set the commanded position for the roll axis
-    float commanded_position = 0.0f; // Example commanded position (e.g., 45 degrees)
+    float commanded_position = -0.0f; // Example commanded position (e.g., 45 degrees)
 
     // Compute the LQR control input for the roll axis
     float roll_speed = compute_LQR_control(

@@ -84,7 +84,7 @@
 #define NAME_LENGTH_MAX 30
 
 // Low-pass filter constant (tunable)
-#define LPF_ALPHA 0.1f // Alpha value for the low-pass filter (0 < LPF_ALPHA <= 1)
+#define LPF_ALPHA 0.9f // Alpha value for the low-pass filter (0 < LPF_ALPHA <= 1)
 
 // ----------------------
 // Global/External Variables
