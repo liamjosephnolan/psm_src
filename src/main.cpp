@@ -236,7 +236,6 @@ void setup() {
 // Loop Function
 // ----------------------
 void loop() {
-
     // Calculate the sinusoidal target position for roll (unchanged)
     float target_position = 0; 
     commanded_positions[0] = target_position; // Update commanded position for telemetry
@@ -249,7 +248,7 @@ void loop() {
 
     // == LQR Control Logic For Roll Axis ==
     float roll_lqr_gains[2] = {255.1886f, 4.0860f}; // Gains for position error and velocity
-    float roll_speed = compute_LQR_control(
+    float roll_speed = compute_roll_LQR_control(
         roll_lqr_gains, 
         target_position, 
         actual_positions[0] // Actual position (roll)
@@ -258,13 +257,12 @@ void loop() {
     commanded_speeds[0] = roll_speed; // Store commanded speed for telemetry
 
     // == LQR Control Logic For Pitch Axis ==
-    float pitch_lqr_gains[2] = {180.4189f    2.6490f}; // Gains for position error and velocity
-    float pitch_speed = compute_LQR_control(
+    float pitch_lqr_gains[2] = {180.4189f, 2.6490f}; // Gains for position error and velocity
+    float pitch_speed = compute_pitch_LQR_control(
         pitch_lqr_gains, 
         commanded_positions[1], 
         actual_positions[1] // Actual position (pitch)
     );
-
     motor2.setSpeed(static_cast<int16_t>(pitch_speed));
     commanded_speeds[1] = pitch_speed; // Store commanded speed for telemetry
 

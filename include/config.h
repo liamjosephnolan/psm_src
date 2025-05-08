@@ -146,7 +146,8 @@ extern float Ax2toAngle(long count);
 extern float Ax3toAngle(long count);
 
 // Declare the LQR function
-float compute_LQR_control(float* gains, float commanded_position, float actual_position);
+float compute_roll_LQR_control(float* gains, float commanded_position, float actual_position);
+float compute_pitch_LQR_control(float* gains, float commanded_position, float actual_position);
 
 // Helper functions
 extern void publish_debug_message(const char *message);
