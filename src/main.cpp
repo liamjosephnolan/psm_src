@@ -265,6 +265,9 @@ void loop() {
         actual_positions[1] // Actual position (pitch)
     );
 
+    motor2.setSpeed(static_cast<int16_t>(pitch_speed));
+    commanded_speeds[1] = pitch_speed; // Store commanded speed for telemetry
+
 
     // 2. Read raw sensor data (no filtering)
     read_encoder_data(&sensor_data_msg);
