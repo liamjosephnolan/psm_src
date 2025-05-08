@@ -242,7 +242,7 @@ void loop() {
     float elapsed_time = (millis() - start_time) / 1000.0f;
 
     // Calculate the sinusoidal target position
-    float target_position = 5.0f * sin((2.0f * PI / 5.0f) * elapsed_time); // Amplitude = 5, Period = 5 seconds
+    float target_position = 2.5f * sin((2.0f * PI / 5.0f) * elapsed_time); // Amplitude = 5, Period = 5 seconds
     commanded_positions[0] = target_position; // Update commanded position for telemetry
     commanded_positions[1] = target_position; // Update commanded position for telemetry
 
@@ -262,7 +262,7 @@ void loop() {
     commanded_speeds[0] = roll_speed; // Store commanded speed for telemetry
 
     // == LQR Control Logic For Pitch Axis ==
-    float pitch_lqr_gains[2] = {180.4189f, 2.6490f}; // Gains for position error and velocity
+    float pitch_lqr_gains[2] = {268.6705f,    7.8313f}; // Gains for position error and velocity
     float pitch_speed = compute_pitch_LQR_control(
         pitch_lqr_gains, 
         commanded_positions[1], 
