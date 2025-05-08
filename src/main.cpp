@@ -236,19 +236,17 @@ void setup() {
 // Loop Function
 // ----------------------
 void loop() {
-    static unsigned long start_time = millis(); // Record the start time
-
-    // Calculate the elapsed time in seconds
-    float elapsed_time = (millis() - start_time) / 1000.0f;
 
     // Calculate the sinusoidal target position
-    float target_position = 5.0f * sin((2.0f * PI / 5.0f) * elapsed_time); // Amplitude = 5, Period = 5 seconds
+    float target_position = 0; 
     commanded_positions[0] = target_position; // Update commanded position for telemetry
     
     // 1. Read filtered encoder values
-    actual_positions[0] = Ax1toAngle(read_filtered_encoder(0)); // Roll
+    actual_positions[0] = Ax1toAngle(Enc1.read()); // Roll
     actual_positions[1] = Ax2toAngle(Enc2.read()); // Pitch
     actual_positions[2] = Ax3toAngle(Enc3.read()); // Insertion
+
+    // == LQR Control Logic For Roll Axis ==
 
     // Example LQR gains
     float lqr_gains[2] = {255.1886f,    4.0860f}; // Gains for position error and velocity
@@ -264,6 +262,12 @@ void loop() {
     motor1.setSpeed(static_cast<int16_t>(roll_speed));
 
     commanded_speeds[0] = roll_speed; // Store commanded speed for telemetry
+
+    // == Pitch Step response
+
+    float pitch_speed = PIDupdate(&target_position,1, "PI", 60.0f, 110.0f, 0.0f);
+    commanded_speeds[1] = pitch_speed; // Store commanded speed for telemetry
+
 
     // 2. Read raw sensor data (no filtering)
     read_encoder_data(&sensor_data_msg);
