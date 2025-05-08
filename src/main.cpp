@@ -236,13 +236,11 @@ void setup() {
 // Loop Function
 // ----------------------
 void loop() {
-    static unsigned long start_time = millis(); // Record the start time
-    static bool step_response_started = false;  // Flag to track if step response has started
-    static float last_pitch_speed = 0.0f;       // Store the last pitch speed after 10 seconds
 
     // Calculate the sinusoidal target position for roll (unchanged)
     float target_position = 0; 
     commanded_positions[0] = target_position; // Update commanded position for telemetry
+    commanded_positions[1] = target_position; // Update commanded position for telemetry
 
     // 1. Read filtered encoder values
     actual_positions[0] = Ax1toAngle(Enc1.read()); // Roll
@@ -250,38 +248,23 @@ void loop() {
     actual_positions[2] = Ax3toAngle(Enc3.read()); // Insertion
 
     // == LQR Control Logic For Roll Axis ==
-    float lqr_gains[2] = {255.1886f, 4.0860f}; // Gains for position error and velocity
+    float roll_lqr_gains[2] = {255.1886f, 4.0860f}; // Gains for position error and velocity
     float roll_speed = compute_LQR_control(
-        lqr_gains, 
+        roll_lqr_gains, 
         target_position, 
         actual_positions[0] // Actual position (roll)
     );
     motor1.setSpeed(static_cast<int16_t>(roll_speed));
     commanded_speeds[0] = roll_speed; // Store commanded speed for telemetry
 
-    // == Step Response for Pitch Axis ==
-    unsigned long elapsed_time = millis() - start_time;
+    // == LQR Control Logic For Pitch Axis ==
+    float pitch_lqr_gains[2] = {180.4189f    2.6490f}; // Gains for position error and velocity
+    float pitch_speed = compute_LQR_control(
+        pitch_lqr_gains, 
+        commanded_positions[1], 
+        actual_positions[1] // Actual position (pitch)
+    );
 
-    if (elapsed_time <= 10000) {
-        // For the first 10 seconds, PID control the pitch axis to 0
-        float pitch_target = 0.0f; // Target position for pitch
-        float pitch_speed = PIDupdate(&pitch_target, 1, "PI", 60.0f, 110.0f, 0.0f);
-        commanded_speeds[1] = pitch_speed; // Store commanded speed for telemetry
-        // Save the last pitch speed for the step response
-        last_pitch_speed = pitch_speed;
-    } else {
-        if (!step_response_started) {
-            // After 10 seconds, start the step response
-            step_response_started = true; // Ensure this block runs only once
-            float step_speed = last_pitch_speed - 8.0f; // Subtract 3 from the last pitch speed
-            motor2.setSpeed(static_cast<int16_t>(step_speed)); // Apply the step response to motor2
-            commanded_speeds[1] = step_speed; // Store commanded speed for telemetry
-
-            // Debugging: Log the step response
-            Serial.print("Step Response Started: Step Speed = ");
-            Serial.println(step_speed);
-        }
-    }
 
     // 2. Read raw sensor data (no filtering)
     read_encoder_data(&sensor_data_msg);
