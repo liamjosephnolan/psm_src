@@ -242,7 +242,7 @@ void loop() {
     float elapsed_time = (millis() - start_time) / 1000.0f;
 
     // Calculate the sinusoidal target position
-    float target_position = 2.5f * sin((2.0f * PI / 5.0f) * elapsed_time); // Amplitude = 5, Period = 5 seconds
+    float target_position = 5.0f * sin((2.0f * PI / 5.0f) * elapsed_time); // Amplitude = 5, Period = 5 seconds
     commanded_positions[0] = target_position; // Update commanded position for telemetry
     commanded_positions[1] = target_position; // Update commanded position for telemetry
 
