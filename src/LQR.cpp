@@ -49,9 +49,8 @@ float compute_roll_LQR_control(float* gains, float commanded_position, float act
 float compute_pitch_LQR_control(float* gains, float commanded_position, float actual_position) {
     static float previous_position_pitch = 0.0f; // Store the previous position for pitch
     static unsigned long previous_time_pitch = 0; // Store the previous time for pitch
-    static float filtered_velocity_pitch = 0.0f; // Store the filtered velocity for pitch
     static float previous_commanded_position = 0.0f; // Store the previous commanded position
-    const float alpha = 0.9f; // Smoothing factor for low-pass filter
+    const float lambda = 0.0f; // Smoothing factor for feedforward control
 
     // System matrices
     const float A[2][2] = {{-4.3950, -2.3842}, {4.0000, 0.0}};
@@ -65,9 +64,6 @@ float compute_pitch_LQR_control(float* gains, float commanded_position, float ac
     // Calculate raw velocity using finite difference
     float raw_velocity = (actual_position - previous_position_pitch) / delta_time;
 
-    // Apply low-pass filter to smooth the velocity
-    filtered_velocity_pitch = alpha * filtered_velocity_pitch + (1.0f - alpha) * raw_velocity;
-
     // Update the previous position and time
     previous_position_pitch = actual_position;
     previous_time_pitch = current_time;
@@ -75,8 +71,8 @@ float compute_pitch_LQR_control(float* gains, float commanded_position, float ac
     // Compute the error between commanded and actual position
     float position_error = commanded_position - actual_position;
 
-    // Combine position error and filtered velocity into a state array
-    float state[2] = {position_error, filtered_velocity_pitch}; // Position error and filtered velocity
+    // Combine position error and raw velocity into a state array
+    float state[2] = {position_error, raw_velocity}; // Position error and raw velocity
 
     // Compute the LQR control input
     float control_input = 0.0f;
@@ -103,7 +99,7 @@ float compute_pitch_LQR_control(float* gains, float commanded_position, float ac
     }
 
     // Combine LQR control input and feedforward control input
-    control_input += u_ff;
+    control_input += lambda * u_ff;
 
     // Limit the control input to a maximum and minimum value
     if (control_input > 100) {

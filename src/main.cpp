@@ -237,14 +237,19 @@ void setup() {
 // ----------------------
 void loop() {
     static unsigned long start_time = millis(); // Record the start time
+    static bool chirp_started = false;         // Flag to track if the chirp input has started
+    static unsigned long chirp_start_time = 0; // Time when the chirp input starts
+    static float last_pitch_speed = 0.0f;      // Store the last pitch speed before switching to chirp input
 
-    // Calculate elapsed time in seconds
-    float elapsed_time = (millis() - start_time) / 1000.0f;
+    // Parameters for the chirp input
+    const float amplitude = 10.0f; // Amplitude of the chirp (±5 degrees)
+    const float f0 = 0.1f;        // Start frequency (Hz)
+    const float f1 = 10.0f;       // End frequency (Hz)
+    const float T = 60.0f;        // Duration of the chirp (seconds)
 
-    // Calculate the sinusoidal target position
-    float target_position = 5.0f * sin((2.0f * PI / 5.0f) * elapsed_time); // Amplitude = 5, Period = 5 seconds
-    commanded_positions[0] = target_position; // Update commanded position for telemetry
-    commanded_positions[1] = target_position; // Update commanded position for telemetry
+    // Calculate elapsed time since the program started
+    unsigned long current_time = millis();
+    float elapsed_time = (current_time - start_time) / 1000.0f; // Convert to seconds
 
     // 1. Read filtered encoder values
     actual_positions[0] = Ax1toAngle(Enc1.read()); // Roll
@@ -255,21 +260,56 @@ void loop() {
     float roll_lqr_gains[2] = {255.1886f, 4.0860f}; // Gains for position error and velocity
     float roll_speed = compute_roll_LQR_control(
         roll_lqr_gains, 
-        target_position, 
+        0.0f, // Target position for roll is 0 degrees
         actual_positions[0] // Actual position (roll)
     );
     motor1.setSpeed(static_cast<int16_t>(roll_speed));
     commanded_speeds[0] = roll_speed; // Store commanded speed for telemetry
 
-    // == LQR Control Logic For Pitch Axis ==
-    float pitch_lqr_gains[2] = {268.6705f,    7.8313f}; // Gains for position error and velocity
-    float pitch_speed = compute_pitch_LQR_control(
-        pitch_lqr_gains, 
-        commanded_positions[1], 
-        actual_positions[1] // Actual position (pitch)
-    );
-    motor2.setSpeed(static_cast<int16_t>(pitch_speed));
-    commanded_speeds[1] = pitch_speed; // Store commanded speed for telemetry
+    // == Pitch Control Logic ==
+    if (elapsed_time < 15.0f) {
+        // Use LQR control to drive the pitch to 0 degrees for the first 15 seconds
+        float pitch_lqr_gains[2] = {100.4189f, 0.590f}; // Gains for position error and velocity
+        float pitch_speed = compute_pitch_LQR_control(
+            pitch_lqr_gains, 
+            -10.0f, // Target position for pitch is 0 degrees
+            actual_positions[1] // Actual position (pitch)
+        );
+        motor2.setSpeed(static_cast<int16_t>(pitch_speed)); // Apply LQR control to motor2
+        commanded_speeds[1] = pitch_speed; // Store commanded speed for telemetry
+
+        // Save the last pitch speed for chirp input
+        last_pitch_speed = pitch_speed;
+    } else {
+        if (!chirp_started) {
+            // Start the chirp input
+            chirp_started = true;
+            chirp_start_time = current_time; // Record the start time of the chirp
+            Serial.println("Chirp input started.");
+        }
+
+        // Calculate elapsed time since the chirp started
+        float chirp_elapsed_time = (current_time - chirp_start_time) / 1000.0f; // Convert to seconds
+
+        if (chirp_elapsed_time <= T) {
+            // Generate the chirp input
+            float frequency = f0 + (f1 - f0) * chirp_elapsed_time / T; // Linearly varying frequency
+            float chirp_input = last_pitch_speed + amplitude * sin(2.0f * PI * frequency * chirp_elapsed_time);
+
+            // Apply the chirp input to the motor
+            motor2.setSpeed(static_cast<int16_t>(chirp_input));
+            commanded_speeds[1] = chirp_input; // Store commanded speed for telemetry
+
+            // Debugging: Log the chirp input
+            Serial.print("Chirp Input: ");
+            Serial.println(chirp_input);
+        } else {
+            // Stop the chirp input after the duration
+            motor2.setSpeed(0); // Stop the motor
+            commanded_speeds[1] = 0; // Set commanded speed to 0
+            Serial.println("Chirp input completed.");
+        }
+    }
 
     // 2. Read raw sensor data (no filtering)
     read_encoder_data(&sensor_data_msg);
@@ -282,5 +322,5 @@ void loop() {
     publish_joint_telemetry(actual_positions, commanded_positions, commanded_speeds);
 
     // 5. Maintain loop timing
-    delay(10); // Optional: Small delay to prevent excessive CPU usage
+    delay(2); // Sampling rate of 500 Hz (2 ms per iteration)
 }
