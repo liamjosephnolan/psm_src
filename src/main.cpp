@@ -236,82 +236,77 @@ void setup() {
 // Loop Function
 // ----------------------
 void loop() {
-    static unsigned long start_time = millis(); // Record the start time
-    static bool chirp_started = false;         // Flag to track if the chirp input has started
-    static unsigned long chirp_start_time = 0; // Time when the chirp input starts
-    static float last_pitch_speed = 0.0f;      // Store the last pitch speed before switching to chirp input
+    static unsigned long start_time = millis();
+    static bool prbs_started = false;
+    static unsigned long prbs_last_toggle_time = 0;
+    static float prbs_value = 0.0f;
 
-    // Parameters for the chirp input
-    const float amplitude = 10.0f; // Amplitude of the chirp (±5 degrees)
-    const float f0 = 0.1f;        // Start frequency (Hz)
-    const float f1 = 10.0f;       // End frequency (Hz)
-    const float T = 60.0f;        // Duration of the chirp (seconds)
+    // PRBS parameters
+    const float prbs_amplitude = 15.0f;
 
-    // Calculate elapsed time since the program started
+    // Array of toggle intervals in milliseconds
+    const unsigned long prbs_intervals[] = {20, 30, 50, 70, 100};
+    const int num_intervals = sizeof(prbs_intervals) / sizeof(prbs_intervals[0]);
+    static int current_interval_index = 0;
+
     unsigned long current_time = millis();
-    float elapsed_time = (current_time - start_time) / 1000.0f; // Convert to seconds
+    float elapsed_time = (current_time - start_time) / 1000.0f;
 
     // 1. Read filtered encoder values
-    actual_positions[0] = Ax1toAngle(Enc1.read()); // Roll
-    actual_positions[1] = Ax2toAngle(Enc2.read()); // Pitch
-    actual_positions[2] = Ax3toAngle(Enc3.read()); // Insertion
+    actual_positions[0] = Ax1toAngle(Enc1.read());
+    actual_positions[1] = Ax2toAngle(Enc2.read());
+    actual_positions[2] = Ax3toAngle(Enc3.read());
 
-    // == LQR Control Logic For Roll Axis ==
-    float roll_lqr_gains[2] = {255.1886f, 4.0860f}; // Gains for position error and velocity
+    // == Roll Axis LQR ==
+    float roll_lqr_gains[2] = {255.1886f, 4.0860f};
     float roll_speed = compute_roll_LQR_control(
         roll_lqr_gains, 
-        0.0f, // Target position for roll is 0 degrees
-        actual_positions[0] // Actual position (roll)
+        0.0f,
+        actual_positions[0]
     );
     motor1.setSpeed(static_cast<int16_t>(roll_speed));
-    commanded_speeds[0] = roll_speed; // Store commanded speed for telemetry
+    commanded_speeds[0] = roll_speed;
 
-    // == Pitch Control Logic ==
+    // == Pitch Axis ==
     if (elapsed_time < 15.0f) {
-        // Use LQR control to drive the pitch to 0 degrees for the first 15 seconds
-        float pitch_lqr_gains[2] = {100.4189f, 0.590f}; // Gains for position error and velocity
+        float pitch_lqr_gains[2] = {100.4189f, 0.590f};
         float pitch_speed = compute_pitch_LQR_control(
             pitch_lqr_gains, 
-            -10.0f, // Target position for pitch is 0 degrees
-            actual_positions[1] // Actual position (pitch)
+            0.0f,
+            actual_positions[1]
         );
-        motor2.setSpeed(static_cast<int16_t>(pitch_speed)); // Apply LQR control to motor2
-        commanded_speeds[1] = pitch_speed; // Store commanded speed for telemetry
-
-        // Save the last pitch speed for chirp input
-        last_pitch_speed = pitch_speed;
+        motor2.setSpeed(static_cast<int16_t>(pitch_speed));
+        commanded_speeds[1] = pitch_speed;
     } else {
-        if (!chirp_started) {
-            // Start the chirp input
-            chirp_started = true;
-            chirp_start_time = current_time; // Record the start time of the chirp
-            Serial.println("Chirp input started.");
+        if (!prbs_started) {
+            prbs_started = true;
+            prbs_last_toggle_time = current_time;
         }
 
-        // Calculate elapsed time since the chirp started
-        float chirp_elapsed_time = (current_time - chirp_start_time) / 1000.0f; // Convert to seconds
+        // Check for PRBS toggle
+        if ((current_time - prbs_last_toggle_time) >= prbs_intervals[current_interval_index]) {
+            prbs_value = (random(0, 2) == 0) ? prbs_amplitude : -prbs_amplitude;
+            prbs_last_toggle_time = current_time;
 
-        if (chirp_elapsed_time <= T) {
-            // Generate the chirp input
-            float frequency = f0 + (f1 - f0) * chirp_elapsed_time / T; // Linearly varying frequency
-            float chirp_input = last_pitch_speed + amplitude * sin(2.0f * PI * frequency * chirp_elapsed_time);
-
-            // Apply the chirp input to the motor
-            motor2.setSpeed(static_cast<int16_t>(chirp_input));
-            commanded_speeds[1] = chirp_input; // Store commanded speed for telemetry
-
-            // Debugging: Log the chirp input
-            Serial.print("Chirp Input: ");
-            Serial.println(chirp_input);
-        } else {
-            // Stop the chirp input after the duration
-            motor2.setSpeed(0); // Stop the motor
-            commanded_speeds[1] = 0; // Set commanded speed to 0
-            Serial.println("Chirp input completed.");
+            // Cycle to next interval value
+            current_interval_index = (current_interval_index + 1) % num_intervals;
         }
+
+        // LQR + PRBS control
+        float pitch_lqr_gains[2] = {100.4189f, 0.590f};
+        float pitch_speed = compute_pitch_LQR_control(
+            pitch_lqr_gains, 
+            0.0f,
+            actual_positions[1]
+        );
+
+        float prbs_control_input = pitch_speed + prbs_value;
+
+        motor2.setSpeed(static_cast<int16_t>(prbs_control_input));
+        commanded_speeds[1] = prbs_control_input;
     }
 
-    // 2. Read raw sensor data (no filtering)
+    // 2. Read raw sensor data
     read_encoder_data(&sensor_data_msg);
     RCSOFTCHECK(rcl_publish(&sensor_data_publisher, &sensor_data_msg, NULL));
 
@@ -322,5 +317,5 @@ void loop() {
     publish_joint_telemetry(actual_positions, commanded_positions, commanded_speeds);
 
     // 5. Maintain loop timing
-    delay(2); // Sampling rate of 500 Hz (2 ms per iteration)
+    delay(2);
 }
