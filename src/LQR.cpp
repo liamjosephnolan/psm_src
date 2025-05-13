@@ -102,10 +102,10 @@ float compute_pitch_LQR_control(float* gains, float commanded_position, float ac
     control_input += lambda * u_ff;
 
     // Limit the control input to a maximum and minimum value
-    if (control_input > 100) {
-        control_input = 100; // Limit to maximum speed
-    } else if (control_input < -100) {
-        control_input = -100; // Limit to minimum speed
+    if (control_input > 150) {
+        control_input = 150; // Limit to maximum speed
+    } else if (control_input < -150) {
+        control_input = -150; // Limit to minimum speed
     }
 
     // Return the computed control input
