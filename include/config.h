@@ -37,6 +37,8 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <vector>
+#include <utility>
 
 // ----------------------
 // Pin Definitions
@@ -109,6 +111,9 @@ extern int16_t roll_voltage;
 extern int16_t pitch_voltage;
 
 // Motor objects
+extern CytronMD motor1;
+extern CytronMD motor2;
+extern CytronMD motor3;
 extern CytronMD motor[3];
 
 // Encoder objects
@@ -170,5 +175,8 @@ extern float PIDupdate(float *target, int index, String mode, float kp, float ki
 
 // Declare the function so it can be called from anywhere
 float read_filtered_encoder(int index);
+
+// External function declaration
+void ramp(float current_angle, float target_angle, int axis_index, float ramp_time);
 
 #endif // CONFIG_H

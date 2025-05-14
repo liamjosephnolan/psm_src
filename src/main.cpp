@@ -236,31 +236,25 @@ void setup() {
 // Loop Function
 // ----------------------
 void loop() {
-    static unsigned long start_time = millis(); // Record the start time
-    static bool chirp_started = false;         // Flag to track if the chirp input has started
-    static unsigned long chirp_start_time = 0; // Time when the chirp input starts
-
-    // Parameters for the chirp input
-    const float amplitude = 15.0f; // Amplitude of the chirp (±5 degrees)
-    const float omega_start = 0.25f; // Start frequency (1 rad/s)
-    const float omega_end = 300.0f; // End frequency (300 rad/s)
-    const float T = 60.0f;          // Duration of the chirp (seconds)
-
-    // Parameters for the sinusoidal target position
-    const float sin_amplitude = 5.0f; // Amplitude of the sine wave (±5 degrees)
-    const float sin_period = 5.0f;    // Period of the sine wave (5 seconds)
+    static bool ramp_executed = false;
 
     // Calculate elapsed time since the program started
     unsigned long current_time = millis();
-    float elapsed_time = (current_time - start_time) / 1000.0f; // Convert to seconds
 
     // 1. Read filtered encoder values
     actual_positions[0] = Ax1toAngle(Enc1.read()); // Roll
     actual_positions[1] = Ax2toAngle(Enc2.read()); // Pitch
     actual_positions[2] = Ax3toAngle(Enc3.read()); // Insertion
 
+    // Execute the ramp only once
+    if (!ramp_executed) {
+        // Ramp the pitch axis from the current position to -15 degrees over 5 seconds
+        ramp(actual_positions[1], -15.0f, 1, 5.0f); // Axis index 1 for pitch
+        ramp_executed = true;
+    }
+
     // == Roll Axis LQR ==
-    float roll_lqr_gains[2] = {255.1886f, 4.0860f}; // Gains for position error and velocity
+    float roll_lqr_gains[2] = {225.1886f, 4.0860f}; // Gains for position error and velocity
     float roll_speed = compute_roll_LQR_control(
         roll_lqr_gains, 
         0.0f, // Target position for roll is 0 degrees
@@ -268,67 +262,6 @@ void loop() {
     );
     motor1.setSpeed(static_cast<int16_t>(roll_speed));
     commanded_speeds[0] = roll_speed; // Store commanded speed for telemetry
-
-    // == Pitch Axis ==
-    if (elapsed_time < 1000.0f) {
-        // Calculate the sinusoidal target position for the pitch axis
-        float target_position = sin_amplitude * sin((2.0f * PI / sin_period) * elapsed_time); // Sinusoidal target
-        commanded_positions[1] = target_position; // Update commanded position for telemetry
-
-        // Use LQR control to drive the pitch to the sinusoidal target position
-        float pitch_lqi_gains[3] = {220.6809f,    0.3174f, 0.1414f}; // Gains for position error and velocity
-        float pitch_speed = compute_pitch_LQI_control(
-            pitch_lqi_gains, 
-            target_position, // Target position for pitch
-            actual_positions[1] // Actual position (pitch)
-        );
-        motor2.setSpeed(static_cast<int16_t>(pitch_speed)); // Apply LQR control to motor2
-        commanded_speeds[1] = pitch_speed; // Store commanded speed for telemetry
-    } else {
-        if (!chirp_started) {
-            // Start the chirp input
-            chirp_started = true;
-            chirp_start_time = current_time; // Record the start time of the chirp
-            Serial.println("Chirp input started.");
-        }
-
-        // Calculate elapsed time since the chirp started
-        float chirp_elapsed_time = (current_time - chirp_start_time) / 1000.0f; // Convert to seconds
-
-        if (chirp_elapsed_time <= T) {
-            // Calculate instantaneous frequency (logarithmic sweep)
-            float omega_t = omega_start * pow(omega_end / omega_start, chirp_elapsed_time / T);
-
-            // Calculate the phase (integral of frequency)
-            static float phase = 0.0f; // Accumulate phase over time
-            phase += omega_t * (1.0f / 500.0f); // Increment phase (sampling rate = 500 Hz)
-
-            // Generate the chirp input
-            float chirp_input = amplitude * sin(phase * 180.0f / PI); // Convert phase to degrees
-
-            // Add the chirp input to the LQR control output
-            float pitch_lqr_gains[2] = {100.4189f, 0.590f}; // Gains for position error and velocity
-            float pitch_speed = compute_pitch_LQR_control(
-                pitch_lqr_gains, 
-                0.0f, // Target position for pitch is 0 degrees
-                actual_positions[1] // Actual position (pitch)
-            );
-            float chirp_control_input = pitch_speed + chirp_input;
-
-            // Apply the chirp-modified control input to the motor
-            motor2.setSpeed(static_cast<int16_t>(chirp_control_input));
-            commanded_speeds[1] = chirp_control_input; // Store commanded speed for telemetry
-
-            // Debugging: Log the chirp input
-            Serial.print("Chirp Input: ");
-            Serial.println(chirp_input);
-        } else {
-            // Stop the chirp input after the duration
-            motor2.setSpeed(0); // Stop the motor
-            commanded_speeds[1] = 0; // Set commanded speed to 0
-            Serial.println("Chirp input completed.");
-        }
-    }
 
     // 2. Read raw sensor data (no filtering)
     read_encoder_data(&sensor_data_msg);
