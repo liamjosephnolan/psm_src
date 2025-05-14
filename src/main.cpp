@@ -246,6 +246,10 @@ void loop() {
     const float omega_end = 300.0f; // End frequency (300 rad/s)
     const float T = 60.0f;          // Duration of the chirp (seconds)
 
+    // Parameters for the sinusoidal target position
+    const float sin_amplitude = 5.0f; // Amplitude of the sine wave (±5 degrees)
+    const float sin_period = 5.0f;    // Period of the sine wave (5 seconds)
+
     // Calculate elapsed time since the program started
     unsigned long current_time = millis();
     float elapsed_time = (current_time - start_time) / 1000.0f; // Convert to seconds
@@ -267,11 +271,15 @@ void loop() {
 
     // == Pitch Axis ==
     if (elapsed_time < 1000.0f) {
-        // Use LQR control to drive the pitch to 0 degrees for the first 15 seconds
-        float pitch_lqr_gains[2] = {220.6805f,   0.3162f}; // Gains for position error and velocity
-        float pitch_speed = compute_pitch_LQR_control(
-            pitch_lqr_gains, 
-            0.0f, // Target position for pitch is 0 degrees
+        // Calculate the sinusoidal target position for the pitch axis
+        float target_position = sin_amplitude * sin((2.0f * PI / sin_period) * elapsed_time); // Sinusoidal target
+        commanded_positions[1] = target_position; // Update commanded position for telemetry
+
+        // Use LQR control to drive the pitch to the sinusoidal target position
+        float pitch_lqi_gains[3] = {220.6809f,    0.3174f, 0.1414f}; // Gains for position error and velocity
+        float pitch_speed = compute_pitch_LQI_control(
+            pitch_lqi_gains, 
+            target_position, // Target position for pitch
             actual_positions[1] // Actual position (pitch)
         );
         motor2.setSpeed(static_cast<int16_t>(pitch_speed)); // Apply LQR control to motor2

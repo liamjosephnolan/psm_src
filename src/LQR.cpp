@@ -111,3 +111,73 @@ float compute_pitch_LQR_control(float* gains, float commanded_position, float ac
     // Return the computed control input
     return control_input;
 }
+
+// Function to compute the LQI control input for the pitch axis with feedforward control
+float compute_pitch_LQI_control(float* gains, float commanded_position, float actual_position) {
+    static float previous_position_pitch = 0.0f; // Store the previous position for pitch
+    static float previous_commanded_position_pitch = 0.0f;
+    static unsigned long previous_time_pitch = 0; // Store the previous time for pitch
+    static float integral_error = 0.0f; // Accumulated integral error
+    const float lambda = 0.70f; // Smoothing factor for feedforward control
+
+    // System matrices
+    const float A[2][2] = {{-4.3950, -2.3842}, {4.0000, 0.0}};
+    const float B_dagger[2][2] = {{0.5, 0.0}, {0.0, 0.0}};
+
+    // Calculate delta time using micros() for higher precision
+    unsigned long current_time = micros();
+    float delta_time = (current_time - previous_time_pitch) / 1000000.0f; // Convert to seconds
+    if (delta_time <= 0.0f) delta_time = 0.000001f; // Prevent division by zero
+
+    // Calculate raw velocity using finite difference
+    float raw_velocity = (actual_position - previous_position_pitch) / delta_time;
+
+    // Update the previous position and time
+    previous_position_pitch = actual_position;
+    previous_time_pitch = current_time;
+
+    // Compute the error between commanded and actual position
+    float position_error = commanded_position - actual_position;
+
+    // Update the integral error
+    integral_error += position_error * delta_time;
+
+    // Combine position error, velocity, and integral error into a state array
+    float state[3] = {position_error, raw_velocity, integral_error}; // Position error, velocity, and integral error
+
+    // Compute the LQI control input
+    float control_input = 0.0f;
+    for (int i = 0; i < 3; i++) { // Loop over the three states (position error, velocity, and integral error)
+        control_input -= gains[i] * state[i];
+    }
+
+    // Calculate x_ref_dot (time derivative of commanded position)
+    float x_ref_dot = (commanded_position - previous_commanded_position_pitch) / delta_time;
+    previous_commanded_position_pitch = commanded_position;
+
+    // Calculate feedforward control input
+    float x_ref[2] = {commanded_position, x_ref_dot}; // Reference state
+    float u_ff = 0.0f; // Feedforward control input
+
+    for (int i = 0; i < 2; i++) {
+        float Ax_ref = 0.0f;
+        for (int j = 0; j < 2; j++) {
+            Ax_ref += A[i][j] * x_ref[j]; // A * x_ref
+        }
+        u_ff += B_dagger[i][i] * (Ax_ref + x_ref_dot); // B_dagger * (A * x_ref + x_ref_dot)
+    }
+
+    // Combine LQI control input and feedforward control input
+    control_input += lambda * u_ff;
+
+    if (control_input > 150.0f) {
+        control_input = 150.0f;
+        if (position_error > 0) integral_error -= position_error * delta_time;
+    } else if (control_input < -150.0f) {
+        control_input = -150.0f;
+        if (position_error < 0) integral_error -= position_error * delta_time;
+    }
+
+    // Return the computed control input
+    return control_input;
+}
