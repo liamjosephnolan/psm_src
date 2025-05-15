@@ -236,52 +236,77 @@ void setup() {
 // Loop Function
 // ----------------------
 void loop() {
-    static unsigned long start_time = millis(); // Record the start time of the sine wave
-    static bool sine_wave_started = false;
+    static unsigned long start_time = millis();
+    static bool prbs_started = false;
+    static unsigned long prbs_last_toggle_time = 0;
+    static float prbs_value = 0.0f;
 
-    // Calculate elapsed time since the program started
+    // PRBS parameters
+    const float prbs_amplitude = 15.0f;
+
+    // Array of toggle intervals in milliseconds
+    const unsigned long prbs_intervals[] = {5, 10, 20, 30, 50, 70, 100, 250, 500, 1000};
+    const int num_intervals = sizeof(prbs_intervals) / sizeof(prbs_intervals[0]);
+    static int current_interval_index = 0;
+
     unsigned long current_time = millis();
-    float elapsed_time = (current_time - start_time) / 1000.0f; // Convert to seconds
+    float elapsed_time = (current_time - start_time) / 1000.0f;
 
     // 1. Read filtered encoder values
-    actual_positions[0] = Ax1toAngle(Enc1.read()); // Roll
-    actual_positions[1] = Ax2toAngle(Enc2.read()); // Pitch
-    actual_positions[2] = Ax3toAngle(Enc3.read()); // Insertion
-
-    // == Pitch Axis Sine Wave ==
-    if (!sine_wave_started) {
-        sine_wave_started = true;
-        start_time = millis(); // Reset start time for sine wave
-    }
-
-    // Calculate the sine wave target position
-    const float amplitude = 5.0f; // Amplitude of the sine wave (±15 degrees)
-    const float period = 5.0f;     // Period of the sine wave (5 seconds)1
-    float target_position = amplitude * sin((2.0f * PI / period) * elapsed_time);
-    // target_position = 0.0f;
-    commanded_positions[1] = target_position; // Store target position for telemetry
-
-    // Use the LQI controller to move the pitch axis to the target position
-    float pitch_lqi_gains[3] = {220.6809f, 0.3174f, 0.1414f}; // Gains for position error, velocity, and integral
-    float pitch_speed = compute_pitch_LQI_control(
-        pitch_lqi_gains, 
-        target_position, // Target position for pitch
-        actual_positions[1] // Actual position (pitch)
-    );
-    motor2.setSpeed(static_cast<int16_t>(pitch_speed)); // Apply LQI control to motor2
-    commanded_speeds[1] = pitch_speed; // Store commanded speed for telemetry
+    actual_positions[0] = Ax1toAngle(Enc1.read());
+    actual_positions[1] = Ax2toAngle(Enc2.read());
+    actual_positions[2] = Ax3toAngle(Enc3.read());
 
     // == Roll Axis LQR ==
-    float roll_lqr_gains[2] = {200.1886f, 2.0860f}; // Gains for position error and velocity
+    float roll_lqr_gains[2] = {255.1886f, 4.0860f};
     float roll_speed = compute_roll_LQR_control(
         roll_lqr_gains, 
-        0.0f, // Target position for roll is 0 degrees
-        actual_positions[0] // Actual position (roll)
+        0.0f,
+        actual_positions[0]
     );
     motor1.setSpeed(static_cast<int16_t>(roll_speed));
-    commanded_speeds[0] = roll_speed; // Store commanded speed for telemetry
+    commanded_speeds[0] = roll_speed;
 
-    // 2. Read raw sensor data (no filtering)
+    // == Pitch Axis ==
+    if (elapsed_time < 15.0f) {
+        float pitch_lqr_gains[2] = {50.4189f, 0.590f};
+        float pitch_speed = compute_pitch_LQR_control(
+            pitch_lqr_gains, 
+            0.0f,
+            actual_positions[1]
+        );
+        motor2.setSpeed(static_cast<int16_t>(pitch_speed));
+        commanded_speeds[1] = pitch_speed;
+    } else {
+        if (!prbs_started) {
+            prbs_started = true;
+            prbs_last_toggle_time = current_time;
+        }
+
+        // Check for PRBS toggle
+        if ((current_time - prbs_last_toggle_time) >= prbs_intervals[current_interval_index]) {
+            prbs_value = (random(0, 2) == 0) ? prbs_amplitude : -prbs_amplitude;
+            prbs_last_toggle_time = current_time;
+
+            // Cycle to next interval value
+            current_interval_index = (current_interval_index + 1) % num_intervals;
+        }
+
+        // LQR + PRBS control
+        float pitch_lqr_gains[2] = {50.4189f, 0.590f};
+        float pitch_speed = compute_pitch_LQR_control(
+            pitch_lqr_gains, 
+            0.0f,
+            actual_positions[1]
+        );
+
+        float prbs_control_input = pitch_speed + prbs_value;
+
+        motor2.setSpeed(static_cast<int16_t>(prbs_control_input));
+        commanded_speeds[1] = prbs_control_input;
+    }
+
+    // 2. Read raw sensor data
     read_encoder_data(&sensor_data_msg);
     RCSOFTCHECK(rcl_publish(&sensor_data_publisher, &sensor_data_msg, NULL));
 
@@ -292,5 +317,5 @@ void loop() {
     publish_joint_telemetry(actual_positions, commanded_positions, commanded_speeds);
 
     // 5. Maintain loop timing
-    delay(2); // Sampling rate of 500 Hz (2 ms per iteration)
+    delay(2);
 }
