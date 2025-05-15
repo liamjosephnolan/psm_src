@@ -236,25 +236,43 @@ void setup() {
 // Loop Function
 // ----------------------
 void loop() {
-    static bool ramp_executed = false;
+    static unsigned long start_time = millis(); // Record the start time of the sine wave
+    static bool sine_wave_started = false;
 
     // Calculate elapsed time since the program started
     unsigned long current_time = millis();
+    float elapsed_time = (current_time - start_time) / 1000.0f; // Convert to seconds
 
     // 1. Read filtered encoder values
     actual_positions[0] = Ax1toAngle(Enc1.read()); // Roll
     actual_positions[1] = Ax2toAngle(Enc2.read()); // Pitch
     actual_positions[2] = Ax3toAngle(Enc3.read()); // Insertion
 
-    // Execute the ramp only once
-    if (!ramp_executed) {
-        // Ramp the pitch axis from the current position to -15 degrees over 5 seconds
-        ramp(actual_positions[1], -15.0f, 1, 5.0f); // Axis index 1 for pitch
-        ramp_executed = true;
+    // == Pitch Axis Sine Wave ==
+    if (!sine_wave_started) {
+        sine_wave_started = true;
+        start_time = millis(); // Reset start time for sine wave
     }
 
+    // Calculate the sine wave target position
+    const float amplitude = 5.0f; // Amplitude of the sine wave (±15 degrees)
+    const float period = 5.0f;     // Period of the sine wave (5 seconds)1
+    float target_position = amplitude * sin((2.0f * PI / period) * elapsed_time);
+    // target_position = 0.0f;
+    commanded_positions[1] = target_position; // Store target position for telemetry
+
+    // Use the LQI controller to move the pitch axis to the target position
+    float pitch_lqi_gains[3] = {220.6809f, 0.3174f, 0.1414f}; // Gains for position error, velocity, and integral
+    float pitch_speed = compute_pitch_LQI_control(
+        pitch_lqi_gains, 
+        target_position, // Target position for pitch
+        actual_positions[1] // Actual position (pitch)
+    );
+    motor2.setSpeed(static_cast<int16_t>(pitch_speed)); // Apply LQI control to motor2
+    commanded_speeds[1] = pitch_speed; // Store commanded speed for telemetry
+
     // == Roll Axis LQR ==
-    float roll_lqr_gains[2] = {225.1886f, 4.0860f}; // Gains for position error and velocity
+    float roll_lqr_gains[2] = {200.1886f, 2.0860f}; // Gains for position error and velocity
     float roll_speed = compute_roll_LQR_control(
         roll_lqr_gains, 
         0.0f, // Target position for roll is 0 degrees
