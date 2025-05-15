@@ -236,6 +236,90 @@ void setup() {
 // Loop Function
 // ----------------------
 void loop() {
+    static unsigned long start_time = millis(); // Record the start time
+    static unsigned long phase_start_time = millis(); // Track the start time of each phase
+    static float last_roll_speed = 0.0f; // Store the last commanded roll speed
+    static int phase = 0; // Track the current phase (0: LQR, 1: Hold speed, 2: Double speed)
+
+    // 1. Read filtered encoder values
+    actual_positions[0] = Ax1toAngle(Enc1.read()); // Roll
+    actual_positions[1] = Ax2toAngle(Enc2.read()); // Pitch
+    actual_positions[2] = Ax3toAngle(Enc3.read()); // Insertion
+
+    unsigned long current_time = millis();
+    unsigned long elapsed_time = current_time - phase_start_time;
+
+    // Phase 0: LQR control for the first 10 seconds
+    if (phase == 0) {
+        if (elapsed_time < 10000) { // 10 seconds
+            float target_roll_angle = -15.0f; // Command the roll axis to -15 degrees
+            float roll_lqr_gains[2] = {200.1886f, 3.0860f}; // Gains for position error and velocity
+            float roll_speed = compute_roll_LQR_control(
+                roll_lqr_gains, 
+                target_roll_angle, // Target position for roll
+                actual_positions[0] // Actual position (roll)
+            );
+            motor1.setSpeed(static_cast<int16_t>(roll_speed)); // Apply LQR control to motor1
+            commanded_speeds[0] = roll_speed; // Store commanded speed for telemetry
+
+            // Store the last commanded roll speed
+            last_roll_speed = roll_speed;
+        } else {
+            // Transition to Phase 1
+            phase = 1;
+            phase_start_time = millis(); // Reset phase start time
+        }
+    }
+
+    // Phase 1: Hold the last commanded speed for 5 seconds
+    else if (phase == 1) {
+        if (elapsed_time < 5000) { // 5 seconds
+            motor1.setSpeed(static_cast<int16_t>(last_roll_speed)); // Maintain the last commanded speed
+            commanded_speeds[0] = last_roll_speed; // Store commanded speed for telemetry
+        } else {
+            // Transition to Phase 2
+            phase = 2;
+            phase_start_time = millis(); // Reset phase start time
+        }
+    }
+
+    // Phase 2: Double the last commanded speed
+    else if (phase == 2) {
+        float doubled_speed = 1.75f * last_roll_speed; // Double the last commanded speed
+        motor1.setSpeed(static_cast<int16_t>(doubled_speed)); // Apply the doubled speed to motor1
+        commanded_speeds[0] = doubled_speed; // Store commanded speed for telemetry
+
+        // No further transitions; this phase continues indefinitely
+    }
+
+    // == Command the Pitch Axis ==
+    float target_pitch_angle = 0.0f; // Command the pitch axis to -15 degrees
+    float pitch_lqi_gains[3] = {220.6809f, 0.3174f, 0.1414f}; // Gains for position error, velocity, and integral
+    float pitch_speed = compute_pitch_LQI_control(
+        pitch_lqi_gains, 
+        target_pitch_angle, // Target position for pitch
+        actual_positions[1] // Actual position (pitch)
+    );
+    motor2.setSpeed(static_cast<int16_t>(pitch_speed)); // Apply LQI control to motor2
+    commanded_speeds[1] = pitch_speed; // Store commanded speed for telemetry
+
+    // 2. Read raw sensor data
+    read_encoder_data(&sensor_data_msg);
+    RCSOFTCHECK(rcl_publish(&sensor_data_publisher, &sensor_data_msg, NULL));
+
+    // 3. Process incoming ROS messages
+    RCSOFTCHECK(rclc_executor_spin_some(&executor, 10));
+
+    // 4. Publish telemetry
+    publish_joint_telemetry(actual_positions, commanded_positions, commanded_speeds);
+
+    // 5. Maintain loop timing
+    delay(2); // Sampling rate of 500 Hz (2 ms per iteration)
+}
+
+
+/* PRBS Characterization. Do not delete
+void loop() {
     static unsigned long start_time = millis();
     static bool prbs_started = false;
     static unsigned long prbs_last_toggle_time = 0;
@@ -319,3 +403,4 @@ void loop() {
     // 5. Maintain loop timing
     delay(2);
 }
+ */
