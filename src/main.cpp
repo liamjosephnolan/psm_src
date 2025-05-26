@@ -234,7 +234,9 @@ void setup() {
 
 // ----------------------
 // Loop Function
-// ----------------------
+// ---------------------
+
+// Roll step response script Do not delete
 void loop() {
     static unsigned long start_time = millis(); // Record the start time
     static unsigned long phase_start_time = millis(); // Track the start time of each phase
@@ -285,7 +287,7 @@ void loop() {
 
     // Phase 2: Double the last commanded speed
     else if (phase == 2) {
-        float doubled_speed = 1.75f * last_roll_speed; // Double the last commanded speed
+        float doubled_speed = 2.0f * last_roll_speed; // Double the last commanded speed
         motor1.setSpeed(static_cast<int16_t>(doubled_speed)); // Apply the doubled speed to motor1
         commanded_speeds[0] = doubled_speed; // Store commanded speed for telemetry
 
@@ -293,7 +295,7 @@ void loop() {
     }
 
     // == Command the Pitch Axis ==
-    float target_pitch_angle = 0.0f; // Command the pitch axis to -15 degrees
+    float target_pitch_angle = 15.0f; // Command the pitch axis to -15 degrees
     float pitch_lqi_gains[3] = {220.6809f, 0.3174f, 0.1414f}; // Gains for position error, velocity, and integral
     float pitch_speed = compute_pitch_LQI_control(
         pitch_lqi_gains, 
