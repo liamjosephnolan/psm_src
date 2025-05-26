@@ -10,6 +10,7 @@ rcl_subscription_t target_pose_subscriber;
 rcl_publisher_t sensor_data_publisher;
 rcl_publisher_t debug_publisher;
 rcl_publisher_t joint_telemetry_publisher;  // New telemetry publisher
+rcl_publisher_t gains_publisher; // Add this global variable
 
 sensor_msgs__msg__JointState received_joint_state;
 geometry_msgs__msg__PoseStamped target_pose_msg;
@@ -138,6 +139,17 @@ void publish_joint_telemetry(double* actual_positions, double* commanded_positio
     RCSOFTCHECK(rcl_publish(&joint_telemetry_publisher, &joint_telemetry_msg, NULL));
 }
 
+void publish_gains(float Kp, float Kd) {
+    char debug_message[128]; // Buffer for the debug message
+    snprintf(debug_message, sizeof(debug_message), "Roll Gains - Kp: %.2f, Kd: %.2f", Kp, Kd);
+
+    debug_msg.data.size = strlen(debug_message);
+    strncpy(debug_msg.data.data, debug_message, debug_msg.data.capacity);
+
+    // Publish the debug message
+    RCSOFTCHECK(rcl_publish(&debug_publisher, &debug_msg, NULL));
+}
+
 // ----------------------
 // Setup Function
 // ----------------------
@@ -198,6 +210,7 @@ void setup() {
         ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Int32MultiArray),
         "/psm_sensor_data"));
 
+    // Initialize debug publisher
     RCCHECK(rclc_publisher_init_default(
         &debug_publisher, &node,
         ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, String),
@@ -250,19 +263,21 @@ void loop() {
     // == Calculate Target Positions ==
     const float pitch_amplitude = 16.0f; // Amplitude for pitch sine wave
     const float roll_amplitude = 20.0f;  // Amplitude for roll sine wave
-    const float pitch_period = 25.0f;     // Period for pitch sine wave (seconds)
+    const float pitch_period = 25.0f;    // Period for pitch sine wave (seconds)
     const float roll_period = 10.0f;     // Period for roll sine wave (seconds)
 
     // Calculate target positions using sine wave equations
     float target_pitch_angle = pitch_amplitude * sin((2.0f * PI / pitch_period) * elapsed_time);
-    // target_pitch_angle = 0.0f; // Command the pitch axis to 0 degrees
     float target_roll_angle = roll_amplitude * sin((2.0f * PI / roll_period) * elapsed_time);
     commanded_positions[0] = target_roll_angle; // Store commanded roll position
     commanded_positions[1] = target_pitch_angle; // Store commanded pitch position
 
     // == Roll Axis Control ==
     // Get roll gains based on the current roll and pitch angles
-    Gains roll_gains = getRollGains(0, 0);
+    Gains roll_gains = getRollGains(actual_positions[0], actual_positions[1]);
+
+    // Publish the roll gains as a debug message
+    publish_gains(roll_gains.Kp, roll_gains.Kd);
 
     // Create a temporary array for the gains
     float roll_lqr_gains[2] = {static_cast<float>(roll_gains.Kp), static_cast<float>(roll_gains.Kd)};
