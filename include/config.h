@@ -2,6 +2,7 @@
 #define CONFIG_H
 
 #include <Arduino.h>
+#include <cmath>
 
 // ----------------------
 // Macros for Error Handling
@@ -34,7 +35,6 @@
 // ----------------------
 // C/C++ Standard Libraries
 // ----------------------
-#include <cmath>
 #include <cstdio>
 #include <cstring>
 #include <vector>
@@ -141,6 +141,12 @@ struct JointAngles {
     float q3;  // Insertion
 };
 
+// Struct to hold the gains
+struct Gains {
+    double Kp;
+    double Kd;
+};
+
 // ----------------------
 // Function Declarations
 // ----------------------
@@ -155,6 +161,8 @@ float compute_roll_LQR_control(float* gains, float commanded_position, float act
 float compute_pitch_LQR_control(float* gains, float commanded_position, float actual_position);
 float compute_pitch_LQI_control(float* gains, float commanded_position, float actual_position);
 
+// Function declarations
+Gains getRollGains(double roll_angle, double pitch_angle);
 
 // Helper functions
 extern void publish_debug_message(const char *message);
