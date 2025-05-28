@@ -145,6 +145,7 @@ struct JointAngles {
 struct Gains {
     double Kp;
     double Kd;
+    double Ki;
 };
 
 // ----------------------
@@ -163,6 +164,7 @@ float compute_pitch_LQI_control(float* gains, float commanded_position, float ac
 
 // Function declarations
 Gains getRollGains(double roll_angle, double pitch_angle);
+Gains getPitchGains(double pitch_angle, double roll_angle); // Declare getPitchGains
 
 // Helper functions
 extern void publish_debug_message(const char *message);

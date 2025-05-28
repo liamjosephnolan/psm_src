@@ -249,6 +249,92 @@ void setup() {
 // Loop Function
 // ---------------------
 
+// void loop() {
+//     static unsigned long start_time = millis(); // Record the start time
+//     static bool prbs_started = false;          // Flag to indicate PRBS has started
+//     static unsigned long prbs_last_toggle_time = 0; // Last time PRBS toggled
+//     static float prbs_value = 0.0f;            // Current PRBS value
+
+//     // PRBS parameters
+//     const float prbs_amplitude = 15.0f; // Amplitude of PRBS
+//     const unsigned long prbs_intervals[] = {5, 10, 20, 30, 50, 70, 100, 250, 500, 1000}; // PRBS toggle intervals (ms)
+//     const int num_intervals = sizeof(prbs_intervals) / sizeof(prbs_intervals[0]);
+//     static int current_interval_index = 0; // Current interval index
+
+//     unsigned long current_time = millis();
+//     float elapsed_time = (current_time - start_time) / 1000.0f; // Elapsed time in seconds
+
+//     // 1. Read filtered encoder values
+//     actual_positions[0] = Ax1toAngle(Enc1.read()); // Roll
+//     actual_positions[1] = Ax2toAngle(Enc2.read()); // Pitch
+//     actual_positions[2] = Ax3toAngle(Enc3.read()); // Insertion
+
+//     // == Roll Axis Adaptive Control ==
+//     Gains roll_gains = getRollGains(actual_positions[0], actual_positions[1]); // Get adaptive gains
+//     float roll_lqr_gains[2] = {static_cast<float>(roll_gains.Kp), static_cast<float>(roll_gains.Kd)};
+//     float roll_speed = compute_roll_LQR_control(
+//         roll_lqr_gains, 
+//         0.0f,               // Target position for roll is 0 degrees
+//         actual_positions[0] // Actual position (roll)
+//     );
+//     motor1.setSpeed(static_cast<int16_t>(roll_speed)); // Apply LQR control to motor1
+//     commanded_speeds[0] = roll_speed; // Store commanded speed for telemetry
+
+//     // == Pitch Axis Control ==
+//     if (elapsed_time < 15.0f) {
+//         // Light LQR control for the first 15 seconds
+//         float pitch_lqr_gains[2] = {50.4189f, 0.590f}; // Light LQR gains
+//         float pitch_speed = compute_pitch_LQR_control(
+//             pitch_lqr_gains, 
+//             0.0f,            // Target position for pitch is -15 degrees
+//             actual_positions[1] // Actual position (pitch)
+//         );
+//         motor2.setSpeed(static_cast<int16_t>(pitch_speed)); // Apply LQR control to motor2
+//         commanded_speeds[1] = pitch_speed; // Store commanded speed for telemetry
+//     } else {
+//         // After 15 seconds, apply PRBS signals
+//         if (!prbs_started) {
+//             prbs_started = true;
+//             prbs_last_toggle_time = current_time; // Initialize PRBS toggle time
+//         }
+
+//         // Check if it's time to toggle PRBS
+//         if ((current_time - prbs_last_toggle_time) >= prbs_intervals[current_interval_index]) {
+//             // Toggle PRBS value between +amplitude and -amplitude
+//             prbs_value = (random(0, 2) == 0) ? prbs_amplitude : -prbs_amplitude;
+//             prbs_last_toggle_time = current_time; // Update last toggle time
+
+//             // Cycle to the next interval
+//             current_interval_index = (current_interval_index + 1) % num_intervals;
+//         }
+
+//         // LQR + PRBS control
+//         float pitch_lqr_gains[2] = {50.4189f, 0.590f}; // Light LQR gains
+//         float pitch_speed = compute_pitch_LQR_control(
+//             pitch_lqr_gains, 
+//             0.0f,            // Target position for pitch is -15 degrees
+//             actual_positions[1] // Actual position (pitch)
+//         );
+
+//         float prbs_control_input = pitch_speed + prbs_value; // Combine LQR control with PRBS
+//         motor2.setSpeed(static_cast<int16_t>(prbs_control_input)); // Apply control to motor2
+//         commanded_speeds[1] = prbs_control_input; // Store commanded speed for telemetry
+//     }
+
+//     // 2. Read raw sensor data
+//     read_encoder_data(&sensor_data_msg);
+//     RCSOFTCHECK(rcl_publish(&sensor_data_publisher, &sensor_data_msg, NULL));
+
+//     // 3. Process incoming ROS messages
+//     RCSOFTCHECK(rclc_executor_spin_some(&executor, 10));
+
+//     // 4. Publish telemetry
+//     publish_joint_telemetry(actual_positions, commanded_positions, commanded_speeds);
+
+//     // 5. Maintain loop timing
+//     delay(2); // Sampling rate of 500 Hz (2 ms per iteration)
+// }
+// Control algorithm testing, do not delete
 void loop() {
     static unsigned long start_time = millis(); // Record the start time
 
@@ -261,10 +347,10 @@ void loop() {
     float elapsed_time = (current_time - start_time) / 1000.0f; // Elapsed time in seconds
 
     // == Calculate Target Positions ==
-    const float pitch_amplitude = 16.0f; // Amplitude for pitch sine wave
+    const float pitch_amplitude = 10.0f; // Amplitude for pitch sine wave
     const float roll_amplitude = 20.0f;  // Amplitude for roll sine wave
-    const float pitch_period = 25.0f;    // Period for pitch sine wave (seconds)
-    const float roll_period = 10.0f;     // Period for roll sine wave (seconds)
+    const float pitch_period = 10.0f;     // Period for pitch sine wave (seconds)
+    const float roll_period = 3.0f;      // Period for roll sine wave (seconds)
 
     // Calculate target positions using sine wave equations
     float target_pitch_angle = pitch_amplitude * sin((2.0f * PI / pitch_period) * elapsed_time);
@@ -292,8 +378,23 @@ void loop() {
     commanded_speeds[0] = roll_speed; // Store commanded speed for telemetry
 
     // == Pitch Axis Control ==
-    // Use LQI control for the pitch axis
-    float pitch_lqi_gains[3] = {220.6809f, 0.3174f, 0.1414f}; // Gains for position error, velocity, and integral
+    // Get pitch gains based on the current pitch and roll angles
+    Gains pitch_gains = getPitchGains(actual_positions[1], actual_positions[0]);
+
+    // Publish the pitch gains as a debug message
+    char debug_message[128];
+    snprintf(debug_message, sizeof(debug_message), "Pitch Gains - Kp: %.2f, Kd: %.2f, Ki: %.2f", 
+             pitch_gains.Kp, pitch_gains.Kd, pitch_gains.Ki);
+    debug_msg.data.size = strlen(debug_message);
+    strncpy(debug_msg.data.data, debug_message, debug_msg.data.capacity);
+    RCSOFTCHECK(rcl_publish(&debug_publisher, &debug_msg, NULL));
+
+    // Create a temporary array for the gains
+    float pitch_lqi_gains[3] = {static_cast<float>(pitch_gains.Kp), 
+                                static_cast<float>(pitch_gains.Kd), 
+                                static_cast<float>(pitch_gains.Ki)};
+
+    // Use the calculated gains for LQI control
     float pitch_speed = compute_pitch_LQI_control(
         pitch_lqi_gains, 
         target_pitch_angle, // Target position for pitch

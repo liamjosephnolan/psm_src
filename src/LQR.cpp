@@ -118,7 +118,7 @@ float compute_pitch_LQI_control(float* gains, float commanded_position, float ac
     static float previous_commanded_position_pitch = 0.0f;
     static unsigned long previous_time_pitch = 0; // Store the previous time for pitch
     static float integral_error = 0.0f; // Accumulated integral error
-    const float lambda = 0.70f; // Smoothing factor for feedforward control
+    const float lambda = 0.0f; // Smoothing factor for feedforward control
 
     // System matrices
     const float A[2][2] = {{-4.3950, -2.3842}, {4.0000, 0.0}};
