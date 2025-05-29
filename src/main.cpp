@@ -249,6 +249,7 @@ void setup() {
 // Loop Function
 // ---------------------
 
+// PRBS Characterization DO NOT DELETE
 // void loop() {
 //     static unsigned long start_time = millis(); // Record the start time
 //     static bool prbs_started = false;          // Flag to indicate PRBS has started
@@ -283,7 +284,7 @@ void setup() {
 //     // == Pitch Axis Control ==
 //     if (elapsed_time < 15.0f) {
 //         // Light LQR control for the first 15 seconds
-//         float pitch_lqr_gains[2] = {50.4189f, 0.590f}; // Light LQR gains
+//         float pitch_lqr_gains[2] = {30.4189f, 0.390f}; // Light LQR gains
 //         float pitch_speed = compute_pitch_LQR_control(
 //             pitch_lqr_gains, 
 //             0.0f,            // Target position for pitch is -15 degrees
@@ -309,7 +310,7 @@ void setup() {
 //         }
 
 //         // LQR + PRBS control
-//         float pitch_lqr_gains[2] = {50.4189f, 0.590f}; // Light LQR gains
+//         float pitch_lqr_gains[2] = {30.4189f, 0.390f}; // Light LQR gains
 //         float pitch_speed = compute_pitch_LQR_control(
 //             pitch_lqr_gains, 
 //             0.0f,            // Target position for pitch is -15 degrees
@@ -347,10 +348,10 @@ void loop() {
     float elapsed_time = (current_time - start_time) / 1000.0f; // Elapsed time in seconds
 
     // == Calculate Target Positions ==
-    const float pitch_amplitude = 10.0f; // Amplitude for pitch sine wave
+    const float pitch_amplitude = 15.0f; // Amplitude for pitch sine wave
     const float roll_amplitude = 20.0f;  // Amplitude for roll sine wave
     const float pitch_period = 10.0f;     // Period for pitch sine wave (seconds)
-    const float roll_period = 3.0f;      // Period for roll sine wave (seconds)
+    const float roll_period = 11.0f;      // Period for roll sine wave (seconds)
 
     // Calculate target positions using sine wave equations
     float target_pitch_angle = pitch_amplitude * sin((2.0f * PI / pitch_period) * elapsed_time);
