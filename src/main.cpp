@@ -255,7 +255,7 @@ void loop() {
     static unsigned long prbs_last_toggle_time = 0; // Last time PRBS toggled
     static float prbs_value = 0.0f;            // Current PRBS value
     float roll_target_position = 0.0f; // Target position for roll axis
-    float pitch_target_position = -15.0f; // Target position for pitch axis
+    float pitch_target_position = 15.0f; // Target position for pitch axis
 
     // PRBS parameters
     const float prbs_amplitude = 15.0f; // Amplitude of PRBS
