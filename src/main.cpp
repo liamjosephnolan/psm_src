@@ -11,15 +11,11 @@ rcl_publisher_t debug_publisher;
 rcl_publisher_t joint_telemetry_publisher;  // New telemetry publisher
 rcl_publisher_t gains_publisher; // Add this global variable
 
-rcl_publisher_t servo_telemetry_publisher;  // 🔥 New: Servo telemetry publisher
-
 sensor_msgs__msg__JointState received_joint_state;
 geometry_msgs__msg__PoseStamped target_pose_msg;
 std_msgs__msg__Int32MultiArray sensor_data_msg;
 std_msgs__msg__String debug_msg;
 sensor_msgs__msg__JointState joint_telemetry_msg;  // New telemetry message
-
-std_msgs__msg__Int32MultiArray servo_telemetry_msg;  // 🔥 New: message for servo values
 
 rclc_executor_t executor;
 rclc_support_t support;
@@ -53,8 +49,6 @@ int16_t pitch_voltage = 0;
 // ROS Callbacks
 // ----------------------
 void joint_state_callback(const void *msgin) {
-    publish_debug_message("[INFO] Entered joint_state_callback");
-
     const sensor_msgs__msg__JointState *msg = (const sensor_msgs__msg__JointState *)msgin;
 
     if (msg->position.size < 7 || msg->position.data == NULL) {
@@ -81,24 +75,16 @@ void joint_state_callback(const void *msgin) {
     servo2.write(servo_val[1]);
     servo3.write(servo_val[2]);
     servo4.write(servo_val[3]);
-
-    publish_debug_message("[INFO] Servo values computed and written");
-
-    // 🔥 Publish the servo values
-    for (int i = 0; i < 4; i++) {
-        servo_telemetry_msg.data.data[i] = servo_val[i];
-    }
-    RCSOFTCHECK(rcl_publish(&servo_telemetry_publisher, &servo_telemetry_msg, NULL));
-
-    publish_debug_message("[INFO] Servo telemetry published");
 }
 
 void target_pose_callback(const void *msgin) {
     const geometry_msgs__msg__PoseStamped *msg = (const geometry_msgs__msg__PoseStamped *)msgin;
 
+    // Directly copy into your commanded_positions buffer
     commanded_positions[0] = msg->pose.position.x;
     commanded_positions[1] = msg->pose.position.y;
     commanded_positions[2] = msg->pose.position.z;
+
 }
 
 // ----------------------
@@ -106,20 +92,22 @@ void target_pose_callback(const void *msgin) {
 // ----------------------
 void init_joint_telemetry_message() {
     memset(&joint_telemetry_msg, 0, sizeof(sensor_msgs__msg__JointState));
-
+    
+    // Initialize joint names
     const char* joint_names[] = {"roll", "pitch", "insertion"};
     joint_telemetry_msg.name.data = (rosidl_runtime_c__String *)malloc(3 * sizeof(rosidl_runtime_c__String));
     joint_telemetry_msg.name.size = 3;
     joint_telemetry_msg.name.capacity = 3;
-
+    
     for (size_t i = 0; i < 3; i++) {
         rosidl_runtime_c__String__init(&joint_telemetry_msg.name.data[i]);
-        joint_telemetry_msg.name.data[i].data = (char *)malloc(strlen(joint_names[i]) + 1);
+        joint_telemetry_msg.name.data[i].data = (char *)malloc(strlen(joint_names[i]) + 1); // Allocate exact size
         joint_telemetry_msg.name.data[i].size = strlen(joint_names[i]);
         joint_telemetry_msg.name.data[i].capacity = strlen(joint_names[i]) + 1;
-        strcpy(joint_telemetry_msg.name.data[i].data, joint_names[i]);
+        strcpy(joint_telemetry_msg.name.data[i].data, joint_names[i]); // Copy the name
     }
 
+    // Initialize arrays
     joint_telemetry_msg.position.data = (double *)malloc(3 * sizeof(double));
     joint_telemetry_msg.position.size = 3;
     joint_telemetry_msg.position.capacity = 3;
@@ -134,17 +122,31 @@ void init_joint_telemetry_message() {
 }
 
 void publish_joint_telemetry(double* actual_positions, double* commanded_positions, double* commanded_speeds) {
+    // Update message data
     for (int i = 0; i < 3; i++) {
-        joint_telemetry_msg.position.data[i] = actual_positions[i];
-        joint_telemetry_msg.effort.data[i] = commanded_positions[i];
-        joint_telemetry_msg.velocity.data[i] = commanded_speeds[i];
+        joint_telemetry_msg.position.data[i] = actual_positions[i];     // Actual positions
+        joint_telemetry_msg.effort.data[i] = commanded_positions[i];   // Commanded positions
+        joint_telemetry_msg.velocity.data[i] = commanded_speeds[i];    // Commanded speeds
     }
 
+    // Update header timestamp (optional but recommended)
     int64_t time_ms = millis();
     joint_telemetry_msg.header.stamp.sec = time_ms / 1000;
     joint_telemetry_msg.header.stamp.nanosec = (time_ms % 1000) * 1000000;
 
+    // Publish
     RCSOFTCHECK(rcl_publish(&joint_telemetry_publisher, &joint_telemetry_msg, NULL));
+}
+
+void publish_gains(float Kp, float Kd) {
+    char debug_message[128]; // Buffer for the debug message
+    snprintf(debug_message, sizeof(debug_message), "Roll Gains - Kp: %.2f, Kd: %.2f", Kp, Kd);
+
+    debug_msg.data.size = strlen(debug_message);
+    strncpy(debug_msg.data.data, debug_message, debug_msg.data.capacity);
+
+    // Publish the debug message
+    RCSOFTCHECK(rcl_publish(&debug_publisher, &debug_msg, NULL));
 }
 
 // ----------------------
@@ -155,6 +157,7 @@ void setup() {
     set_microros_serial_transports(Serial);
     delay(2000);
 
+    // Hardware setup
     pinMode(LS1_NO, INPUT_PULLUP);
     pinMode(LS2_NO, INPUT_PULLUP);
     pinMode(LS3_NO, INPUT_PULLUP);
@@ -176,23 +179,25 @@ void setup() {
     analogWriteFrequency(DC2_PWM, PWM_freq);
     analogWriteFrequency(DC3_PWM, PWM_freq);
 
+    // ROS 2 initialization
     allocator = rcl_get_default_allocator();
     RCCHECK(rclc_support_init(&support, 0, NULL, &allocator));
     RCCHECK(rclc_node_init_default(&node, "psm_sensor_node", "", &support));
 
+    // Publishers and Subscribers
     RCCHECK(rclc_subscription_init_default(
         &joint_state_subscriber, &node,
         ROSIDL_GET_MSG_TYPE_SUPPORT(sensor_msgs, msg, JointState),
         "/mtm_joint_states"));
 
     rcl_subscription_options_t subscription_options = rcl_subscription_get_default_options();
-    subscription_options.qos.reliability = RMW_QOS_POLICY_RELIABILITY_RELIABLE;
-    subscription_options.qos.durability = RMW_QOS_POLICY_DURABILITY_VOLATILE;
-    subscription_options.qos.history = RMW_QOS_POLICY_HISTORY_KEEP_LAST;
-    subscription_options.qos.depth = 20;
-    subscription_options.qos.deadline.sec = 0;
-    subscription_options.qos.deadline.nsec = 10000000;
-    subscription_options.qos.liveliness = RMW_QOS_POLICY_LIVELINESS_AUTOMATIC;
+    subscription_options.qos.reliability = RMW_QOS_POLICY_RELIABILITY_RELIABLE; // Ensure reliable delivery
+    subscription_options.qos.durability = RMW_QOS_POLICY_DURABILITY_VOLATILE;   // No need for late-joining subscribers
+    subscription_options.qos.history = RMW_QOS_POLICY_HISTORY_KEEP_LAST;        // Keep only the last few messages
+    subscription_options.qos.depth = 20;                                       // Queue depth of 10 messages
+    subscription_options.qos.deadline.sec = 0;                                 // Deadline of 10 ms
+    subscription_options.qos.deadline.nsec = 10000000;                         // (10 ms in nanoseconds)
+    subscription_options.qos.liveliness = RMW_QOS_POLICY_LIVELINESS_AUTOMATIC; // Default liveliness
 
     RCCHECK(rcl_subscription_init(
         &target_pose_subscriber, &node,
@@ -204,21 +209,19 @@ void setup() {
         ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Int32MultiArray),
         "/psm_sensor_data"));
 
+    // Initialize debug publisher
     RCCHECK(rclc_publisher_init_default(
         &debug_publisher, &node,
         ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, String),
         "/psm_debug"));
 
+    // Initialize telemetry publisher
     RCCHECK(rclc_publisher_init_default(
         &joint_telemetry_publisher, &node,
         ROSIDL_GET_MSG_TYPE_SUPPORT(sensor_msgs, msg, JointState),
         "/psm_joint_telemetry"));
 
-    RCCHECK(rclc_publisher_init_default(
-        &servo_telemetry_publisher, &node,
-        ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Int32MultiArray),
-        "/servo_telemetry"));  // 🔥 New: publisher setup
-
+    // Message memory allocation
     sensor_data_msg.data.data = (int32_t *)malloc(3 * sizeof(int32_t));
     sensor_data_msg.data.size = 3;
     sensor_data_msg.data.capacity = 3;
@@ -227,33 +230,39 @@ void setup() {
     debug_msg.data.size = 0;
     debug_msg.data.capacity = 128;
 
-    servo_telemetry_msg.data.data = (int32_t *)malloc(4 * sizeof(int32_t));  // 🔥 New: allocate servo telemetry
-    servo_telemetry_msg.data.size = 4;
-    servo_telemetry_msg.data.capacity = 4;
-
     init_joint_telemetry_message();
 
-    RCCHECK(rclc_executor_init(&executor, &support.context, 2, &allocator));
+    // Executor setup
+    RCCHECK(rclc_executor_init(&executor, &support.context, 2, &allocator)); 
     RCCHECK(rclc_executor_add_subscription(
         &executor, &joint_state_subscriber, &received_joint_state, &joint_state_callback, ON_NEW_DATA));
     RCCHECK(rclc_executor_add_subscription(
         &executor, &target_pose_subscriber, &target_pose_msg, &target_pose_callback, ON_NEW_DATA));
-}
+
+    home_motors();
+    delay(2500); // Delay for ease of use
+
+ }
 
 // ----------------------
 // Loop Function
 // ---------------------
+
+// Main loop function
 void loop() {
+    // 1. Read raw sensor data
     read_encoder_data(&sensor_data_msg);
     RCSOFTCHECK(rcl_publish(&sensor_data_publisher, &sensor_data_msg, NULL));
 
+    // 2. Process incoming ROS messages
     RCSOFTCHECK(rclc_executor_spin_some(&executor, 10));
 
+    // 3. Publish telemetry
     publish_joint_telemetry(actual_positions, commanded_positions, commanded_speeds);
 
-    delay(2);
+    // 4. Maintain loop timing
+    delay(2); // Sampling rate of 500 Hz (2 ms per iteration)
 }
-
 
 // PRBS Characterization DO NOT DELETE
 // void loop() {
@@ -262,7 +271,7 @@ void loop() {
 //     static unsigned long prbs_last_toggle_time = 0; // Last time PRBS toggled
 //     static float prbs_value = 0.0f;            // Current PRBS value
 //     float roll_target_position = 0.0f; // Target position for roll axis
-//     float pitch_target_position = 15.0f; // Target position for pitch axis
+//     float pitch_target_position = -15.0f; // Target position for pitch axis
 
 //     // PRBS parameters
 //     const float prbs_amplitude = 15.0f; // Amplitude of PRBS
