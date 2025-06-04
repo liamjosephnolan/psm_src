@@ -40,6 +40,9 @@
 #include <vector>
 #include <utility>
 
+// -----Joint Definitions-----
+#define JOINT_COUNT 7
+
 // ----------------------
 // Pin Definitions
 // ----------------------
