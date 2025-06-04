@@ -58,6 +58,28 @@ double joint_efforts[JOINT_COUNT];
 int32_t sensor_data_array[3];
 char debug_data_buffer[128];
 
+
+void calculate_disk_movements(float roll, float pitch, float yaw, float grip, float* disk_movements) {
+    // Coupling matrix
+    const float coupling_matrix[4][4] = {
+        {-1.56323325,  0.0,          0.0,          0.0        }, // Disk 1
+        { 0.0,         1.01857984,  -0.830634273,  0.0        }, // Disk 2
+        { 0.0,         0.0,          0.608862987, -1.21772597}, // Disk 3
+        { 0.0,         0.0,          0.608862987,  1.21772597}  // Disk 4
+    };
+
+    // Desired tool movements
+    const float tool_movements[4] = {roll, pitch, yaw, grip};
+
+    // Calculate disk movements using matrix multiplication
+    for (int i = 0; i < 4; i++) {
+        disk_movements[i] = 0.0;
+        for (int j = 0; j < 4; j++) {
+            disk_movements[i] += coupling_matrix[i][j] * tool_movements[j];
+        }
+    }
+}
+
 // ----------------------
 // ROS Callbacks
 // ----------------------
@@ -75,11 +97,17 @@ void joint_state_callback(const void *msgin) {
     float g2 = msg->position.data[4];
     float g3 = msg->position.data[3];
 
-    servo_val[0] = g0;
-    servo_val[1] = g1;
-    servo_val[2] = g2;
-    servo_val[3] = g3;
+    // Calculate disk movements
+    float disk_movements[4];
+    calculate_disk_movements(g3, g2, g1, g0, disk_movements);
 
+    // Map disk movements to servo values
+    servo_val[0] = constrain(map(disk_movements[0], -90, 90, 0, 180), 0, 180);
+    servo_val[1] = constrain(map(disk_movements[1], -90, 90, 0, 180), 0, 180);
+    servo_val[2] = constrain(map(disk_movements[2], -90, 90, 0, 180), 0, 180);
+    servo_val[3] = constrain(map(disk_movements[3], -90, 90, 0, 180), 0, 180);
+
+    // Write to servos
     servo1.write(servo_val[0]);
     servo2.write(servo_val[1]);
     servo3.write(servo_val[2]);
@@ -113,7 +141,7 @@ void init_joint_telemetry_message() {
         strncpy(joint_names[i].data, names[i], joint_names[i].capacity);
     }
 
-    // Set telemetry arrays
+    // Set telemetry arrays DO NOT DELETE
     joint_telemetry_msg.position.data = joint_positions;
     joint_telemetry_msg.position.size = JOINT_COUNT;
     joint_telemetry_msg.position.capacity = JOINT_COUNT;
