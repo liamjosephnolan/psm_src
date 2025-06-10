@@ -92,26 +92,35 @@ void joint_state_callback(const void *msgin) {
         return;
     }
 
-    float g0 = msg->position.data[6];
-    float g1 = msg->position.data[5];
-    float g2 = msg->position.data[4];
-    float g3 = msg->position.data[3];
+    // Extract joint positions
+    float g0 = msg->position.data[6]; // Grasper pinch
+    float g1 = msg->position.data[5]; // Grasper tilt
+    float g2 = msg->position.data[4]; // Grasper pitch
+    float g3 = msg->position.data[3]; // Grasper roll
 
     // Calculate disk movements
     float disk_movements[4];
     calculate_disk_movements(g3, g2, g1, g0, disk_movements);
 
-    // Map disk movements to servo values
-    servo_val[0] = constrain(map(disk_movements[0], -90, 90, 0, 180), 0, 180);
-    servo_val[1] = constrain(map(disk_movements[1], -90, 90, 0, 180), 0, 180);
-    servo_val[2] = constrain(map(disk_movements[2], -90, 90, 0, 180), 0, 180);
-    servo_val[3] = constrain(map(disk_movements[3], -90, 90, 0, 180), 0, 180);
+    // // Account for servo offsets
+    disk_movements[0] += servo_off[3]; // Disk 1 (Right grasper finger)
+    disk_movements[1] += servo_off[2]; // Disk 2 (Left grasper finger)
+    disk_movements[2] += servo_off[0]; // Disk 3 (Wrist roll)
+    disk_movements[3] += servo_off[1]; // Disk 4 (Wrist pitch)
 
-    // Write to servos
-    servo1.write(servo_val[0]);
-    servo2.write(servo_val[1]);
-    servo3.write(servo_val[2]);
-    servo4.write(servo_val[3]);
+    // // Map disk movements to servo values
+    // disk_movements[1] = constrain(map(disk_movements[0], -125, 125, -260, 260), -260, 260); // Right grasper finger
+    // disk_movements[0] = constrain(map(disk_movements[1], -40, 40, -80, 80), -80, 80); // Left grasper finger
+    // disk_movements[2] = constrain(map(disk_movements[2], -90, 90, 0, 180), 0, 180); // Wrist roll
+    // disk_movements[3] = constrain(map(disk_movements[3], -90, 90, 0, 180), 0, 180); // Wrist pitch
+
+
+    servo1.write(disk_movements[2]); 
+    servo2.write(disk_movements[3]); 
+    servo3.write(disk_movements[1]); 
+    servo4.write(disk_movements[0]); 
+
+    
 }
 
 void target_pose_callback(const void *msgin) {
