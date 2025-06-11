@@ -1,6 +1,7 @@
 #include <Arduino.h>
 #include "config.h"
 
+
 // ----------------------
 // Global ROS 2 Objects
 // ----------------------
@@ -108,27 +109,26 @@ void joint_state_callback(const void *msgin) {
     disk_movements[2] += servo_off[0]; // Disk 3 (Wrist roll)
     disk_movements[3] += servo_off[1]; // Disk 4 (Wrist pitch)
 
-    // // Map disk movements to servo values
-    // disk_movements[1] = constrain(map(disk_movements[0], -125, 125, -260, 260), -260, 260); // Right grasper finger
-    // disk_movements[0] = constrain(map(disk_movements[1], -40, 40, -80, 80), -80, 80); // Left grasper finger
-    // disk_movements[2] = constrain(map(disk_movements[2], -90, 90, 0, 180), 0, 180); // Wrist roll
-    // disk_movements[3] = constrain(map(disk_movements[3], -90, 90, 0, 180), 0, 180); // Wrist pitch
-
-
     servo1.write(disk_movements[2]); 
     servo2.write(disk_movements[3]); 
     servo3.write(disk_movements[1]); 
     servo4.write(disk_movements[0]); 
 
+    // Store servo values in the effort field for servo1, servo2, servo3, and servo4
+    joint_telemetry_msg.effort.data[3] = disk_movements[2]; // Servo1 effort (Wrist roll)
+    joint_telemetry_msg.effort.data[4] = disk_movements[3]; // Servo2 effort (Wrist pitch)
+    joint_telemetry_msg.effort.data[5] = disk_movements[1]; // Servo3 effort (Left grasper finger)
+    joint_telemetry_msg.effort.data[6] = disk_movements[0]; // Servo4 effort (Right grasper finger)
     
+
 }
 
 void target_pose_callback(const void *msgin) {
     const geometry_msgs__msg__PoseStamped *msg = (const geometry_msgs__msg__PoseStamped *)msgin;
 
-    commanded_positions[0] = msg->pose.position.x;
-    commanded_positions[1] = msg->pose.position.y;
-    commanded_positions[2] = msg->pose.position.z;
+    joint_telemetry_msg.effort.data[0] = msg->pose.position.x;
+    joint_telemetry_msg.effort.data[1] = msg->pose.position.y;
+    joint_telemetry_msg.effort.data[2] = msg->pose.position.z;
 }
 
 // ----------------------
@@ -178,11 +178,11 @@ void publish_joint_telemetry(double* actual_positions, double* commanded_positio
         joint_velocities[3 + i] = 0.0;        // No velocity for servos
     }
 
-    int64_t time_ms = millis();
-    joint_telemetry_msg.header.stamp.sec = time_ms / 1000;
-    joint_telemetry_msg.header.stamp.nanosec = (time_ms % 1000) * 1000000;
+    // int64_t time_ms = millis();
+    // joint_telemetry_msg.header.stamp.sec = time_ms / 1000;
+    // joint_telemetry_msg.header.stamp.nanosec = (time_ms % 1000) * 1000000;
 
-    RCSOFTCHECK(rcl_publish(&joint_telemetry_publisher, &joint_telemetry_msg, NULL));
+    // RCSOFTCHECK(rcl_publish(&joint_telemetry_publisher, &joint_telemetry_msg, NULL));
 }
 
 // ----------------------
@@ -218,16 +218,35 @@ void setup() {
     RCCHECK(rclc_support_init(&support, 0, NULL, &allocator));
     RCCHECK(rclc_node_init_default(&node, "psm_sensor_node", "", &support));
 
+    // Define a custom QoS profile explicitly
+    rmw_qos_profile_t custom_qos = {
+        RMW_QOS_POLICY_HISTORY_KEEP_LAST,   // history
+        15,                                // depth (queue size)
+        RMW_QOS_POLICY_RELIABILITY_RELIABLE, // reliability
+        RMW_QOS_POLICY_DURABILITY_VOLATILE,  // durability
+        {0, 0},                            // deadline (rmw_time_t sec, nsec)
+        {0, 0},                            // lifespan
+        RMW_QOS_POLICY_LIVELINESS_SYSTEM_DEFAULT, // liveliness
+        {0, 0},                            // liveliness lease duration
+        false                             // avoid_ros_namespace_conventions
+    };
 
+    // Initialize subscriptions and publishers
+    // Default QoS for other topics
     RCCHECK(rclc_subscription_init_default(
         &joint_state_subscriber, &node,
         ROSIDL_GET_MSG_TYPE_SUPPORT(sensor_msgs, msg, JointState),
         "/mtm_joint_states"));
 
-    RCCHECK(rclc_subscription_init_default(
-        &target_pose_subscriber, &node,
+    // Custom QoS for target_pose subscription
+    rcl_subscription_options_t target_pose_options = rcl_subscription_get_default_options();
+    target_pose_options.qos = custom_qos;
+    RCCHECK(rcl_subscription_init(
+        &target_pose_subscriber,
+        &node,
         ROSIDL_GET_MSG_TYPE_SUPPORT(geometry_msgs, msg, PoseStamped),
-        "/target_pose"));
+        "/target_pose",
+        &target_pose_options));
 
     RCCHECK(rclc_publisher_init_default(
         &sensor_data_publisher, &node,
@@ -239,10 +258,15 @@ void setup() {
         ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, String),
         "/psm_debug"));
 
-    RCCHECK(rclc_publisher_init_default(
-        &joint_telemetry_publisher, &node,
+    // Custom QoS for joint_telemetry publisher
+    rcl_publisher_options_t joint_telemetry_options = rcl_publisher_get_default_options();
+    joint_telemetry_options.qos = custom_qos;
+    RCCHECK(rcl_publisher_init(
+        &joint_telemetry_publisher,
+        &node,
         ROSIDL_GET_MSG_TYPE_SUPPORT(sensor_msgs, msg, JointState),
-        "/psm_joint_telemetry"));
+        "/psm_joint_telemetry",
+        &joint_telemetry_options));
 
     // Static allocations
     sensor_data_msg.data.data = sensor_data_array;
@@ -298,14 +322,21 @@ void loop() {
     read_encoder_data(&sensor_data_msg);
     RCSOFTCHECK(rcl_publish(&sensor_data_publisher, &sensor_data_msg, NULL));
 
-    // 2. Publish joint telemetry
-    publish_joint_telemetry(actual_positions, commanded_positions, commanded_speeds);
 
     // 3. Process incoming ROS messages
-    RCSOFTCHECK(rclc_executor_spin_some(&executor, 10));
+    RCSOFTCHECK(rclc_executor_spin_some(&executor, 0)); // 0 means non-blocking
+
+
+     // Publish telemetry message
+     int64_t time_ms = millis();
+     joint_telemetry_msg.header.stamp.sec = time_ms / 1000;
+     joint_telemetry_msg.header.stamp.nanosec = (time_ms % 1000) * 1000000;
+     
+     RCSOFTCHECK(rcl_publish(&joint_telemetry_publisher, &joint_telemetry_msg, NULL));
 
     // 4. Maintain loop timing
-    delay(2); // Sampling rate of 500 Hz (2 ms per iteration)
+    delay(10); // Sampling rate of 500 Hz (2 ms per iteration)
+
 }
 
 // PRBS Characterization DO NOT DELETE
