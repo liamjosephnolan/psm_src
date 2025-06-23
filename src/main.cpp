@@ -124,11 +124,17 @@ void joint_state_callback(const void *msgin) {
 }
 
 void target_pose_callback(const void *msgin) {
-    const geometry_msgs__msg__PoseStamped *msg = (const geometry_msgs__msg__PoseStamped *)msgin;
+    const geometry_msgs__msg__PointStamped *msg = (const geometry_msgs__msg__PointStamped *)msgin;
 
-    joint_telemetry_msg.effort.data[0] = msg->pose.position.x;
-    joint_telemetry_msg.effort.data[1] = msg->pose.position.y;
-    joint_telemetry_msg.effort.data[2] = msg->pose.position.z;
+    // Extract the x, y, z position from the PointStamped message
+    joint_telemetry_msg.effort.data[0] = msg->point.x;
+    joint_telemetry_msg.effort.data[1] = msg->point.y;
+    joint_telemetry_msg.effort.data[2] = msg->point.z;
+
+    // publish_debug_message("Received target pose (PointStamped):");
+    // char debug_msg[128];
+    // snprintf(debug_msg, sizeof(debug_msg), "x: %.2f, y: %.2f, z: %.2f", msg->point.x, msg->point.y, msg->point.z);
+    // publish_debug_message(debug_msg);
 }
 
 // ----------------------
@@ -244,7 +250,7 @@ void setup() {
     RCCHECK(rcl_subscription_init(
         &target_pose_subscriber,
         &node,
-        ROSIDL_GET_MSG_TYPE_SUPPORT(geometry_msgs, msg, PoseStamped),
+        ROSIDL_GET_MSG_TYPE_SUPPORT(geometry_msgs, msg, PointStamped), // Updated to PointStamped
         "/target_pose",
         &target_pose_options));
 
