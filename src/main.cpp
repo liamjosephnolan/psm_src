@@ -13,7 +13,7 @@ rcl_publisher_t joint_telemetry_publisher;  // New telemetry publisher
 rcl_publisher_t gains_publisher; // Add this global variable
 
 sensor_msgs__msg__JointState received_joint_state;
-geometry_msgs__msg__PoseStamped target_pose_msg;
+geometry_msgs__msg__PointStamped target_pose_msg;
 std_msgs__msg__Int32MultiArray sensor_data_msg;
 std_msgs__msg__String debug_msg;
 sensor_msgs__msg__JointState joint_telemetry_msg;  // New telemetry message

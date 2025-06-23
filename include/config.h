@@ -27,7 +27,7 @@
 #include <std_msgs/msg/int32_multi_array.h>
 #include <sensor_msgs/msg/joint_state.h>
 #include <std_msgs/msg/string.h>
-#include <geometry_msgs/msg/pose_stamped.h>
+#include <geometry_msgs/msg/point_stamped.h>
 #include <rosidl_runtime_c/string_functions.h>
 #include <rmw/qos_profiles.h>  // for rmw_qos_profile_default
 
