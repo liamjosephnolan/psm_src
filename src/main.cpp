@@ -135,6 +135,17 @@ void target_pose_callback(const void *msgin) {
     joint_telemetry_msg.effort.data[0] = msg->position.data[0]; // x
     joint_telemetry_msg.effort.data[1] = msg->position.data[1]; // y
     joint_telemetry_msg.effort.data[2] = msg->position.data[2]; // z
+
+    double x_target = msg->position.data[0];
+    double y_target = msg->position.data[1];
+    double z_target = msg->position.data[2];
+
+    JointAngles angles = computePSMJointAngles(x_target, y_target, z_target);
+
+    joint_telemetry_msg.position.data[0] = angles.q1; // Roll
+    joint_telemetry_msg.position.data[1] = angles.q2; // Pitch
+    joint_telemetry_msg.position.data[2] = angles.q3; // Insertion
+    
 }
 
 // ----------------------
