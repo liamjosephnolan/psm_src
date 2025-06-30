@@ -27,12 +27,12 @@ JointAngles computePSMJointAngles(double x_p, double y_p, double z_p) {
     angles.q3 = static_cast<float>(std::sqrt(x * x + y * y + z * z));
 
     // Compute pitch angle (q2) in degrees and constrain
-    double pitch = (std::atan2(x, y) * 180.0 / M_PI)/10.0;
+    double pitch = (std::atan2(x, y) * 180.0 / M_PI)/4.0;
     pitch = constrain_value(pitch, -15.0, 15.0);
     angles.q2 = static_cast<float>(pitch);
 
     // Compute yaw angle (q1) in degrees and constrain
-    double yaw = (std::atan2(z, y) * 180.0 / M_PI)/10;
+    double yaw = (std::atan2(z, y) * 180.0 / M_PI)/4;
     yaw = constrain_value(yaw, -20.0, 20.0);
     angles.q1 = static_cast<float>(yaw);
 

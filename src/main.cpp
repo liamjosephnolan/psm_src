@@ -189,6 +189,38 @@ void init_joint_telemetry_message() {
 }
 
 
+
+void publish_joint_telemetry(double* actual_positions, double* commanded_positions, double* commanded_speeds) {
+
+    // Update message dataMore actions
+
+    for (int i = 0; i < 3; i++) {
+
+        joint_telemetry_msg.position.data[i] = actual_positions[i];     // Actual positions
+
+        joint_telemetry_msg.effort.data[i] = commanded_positions[i];   // Commanded positions
+
+        joint_telemetry_msg.velocity.data[i] = commanded_speeds[i];    // Commanded speeds
+
+    }
+
+
+
+    // Update header timestamp (optional but recommended)
+
+    int64_t time_ms = millis();
+
+    joint_telemetry_msg.header.stamp.sec = time_ms / 1000;
+
+    joint_telemetry_msg.header.stamp.nanosec = (time_ms % 1000) * 1000000;
+
+
+
+    // Publish
+
+    RCSOFTCHECK(rcl_publish(&joint_telemetry_publisher, &joint_telemetry_msg, NULL));
+
+}
 // ----------------------
 // Setup Function
 // ----------------------
@@ -358,6 +390,9 @@ rosidl_runtime_c__String__init(&target_pose_msg.name.data[i]);
     // Publish initial debug message
     publish_debug_message("Setup Complete");
     delay(1000);
+
+    home_motors();
+    delay(2500); // Delay for ease of use
 }
 
 
@@ -365,19 +400,54 @@ rosidl_runtime_c__String__init(&target_pose_msg.name.data[i]);
 // Loop Function
 // ----------------------
 void loop() {
+    // 1. Read actual joint positions (roll, pitch, insertion)
+    actual_positions[0] = Ax1toAngle(Enc1.read()); // Roll
+    actual_positions[1] = Ax2toAngle(Enc2.read()); // Pitch
+    actual_positions[2] = Ax3toAngle(Enc3.read()); // Insertion
 
+    // 2. Get desired target angles (already implemented)
+    double target_roll_angle = commanded_positions[0]; // Target roll angle
+    double target_pitch_angle = commanded_positions[1]; // Target pitch angle
+
+    // 3. Calculate gains using gain scheduling functions
+    Gains roll_gains = getRollGains(actual_positions[0], actual_positions[1]); // Roll gains
+    Gains pitch_gains = getPitchGains(actual_positions[1], actual_positions[0]); // Pitch gains
+
+    // 4. Command joints using LQI controller
+    // Roll axis control
+    float roll_lqi_gains[2] = {static_cast<float>(roll_gains.Kp), static_cast<float>(roll_gains.Kd)};
+    float roll_speed = compute_roll_LQR_control(
+        roll_lqi_gains,       // Gains for roll
+        target_roll_angle,    // Target roll angle
+        actual_positions[0]   // Actual roll position
+    );
+    motor1.setSpeed(static_cast<int16_t>(roll_speed)); // Apply roll control
+    commanded_speeds[0] = roll_speed; // Store commanded roll speed
+
+    // Pitch axis control
+    float pitch_lqi_gains[3] = {static_cast<float>(pitch_gains.Kp), 
+                                static_cast<float>(pitch_gains.Kd), 
+                                static_cast<float>(pitch_gains.Ki)};
+    float pitch_speed = compute_pitch_LQI_control(
+        pitch_lqi_gains,      // Gains for pitch
+        target_pitch_angle,   // Target pitch angle
+        actual_positions[1]   // Actual pitch position
+    );
+    motor2.setSpeed(static_cast<int16_t>(pitch_speed)); // Apply pitch control
+    commanded_speeds[1] = pitch_speed; // Store commanded pitch speed
+
+    // 5. Read raw sensor data
     read_encoder_data(&sensor_data_msg);
-
     RCSOFTCHECK(rcl_publish(&sensor_data_publisher, &sensor_data_msg, NULL));
 
-    RCSOFTCHECK(rclc_executor_spin_some(&executor, 0));
+    // 6. Process incoming ROS messages
+    RCSOFTCHECK(rclc_executor_spin_some(&executor, 10));
 
-    int64_t time_ms = millis();
-    joint_telemetry_msg.header.stamp.sec = time_ms / 1000;
-    joint_telemetry_msg.header.stamp.nanosec = (time_ms % 1000) * 1000000;
-    RCSOFTCHECK(rcl_publish(&joint_telemetry_publisher, &joint_telemetry_msg, NULL));
+    // 7. Publish telemetry
+    publish_joint_telemetry(actual_positions, commanded_positions, commanded_speeds);
 
-    delay(10); // 500 Hz loop
+    // 8. Maintain loop timing
+    delay(2); // Sampling rate of 500 Hz (2 ms per iteration)
 }
 
 
