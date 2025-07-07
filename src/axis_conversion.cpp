@@ -22,14 +22,11 @@ float Ax2toAngle(long count) {
     float trans = 13.333; // Gear reduction ratio
     return ((-1) * ((float)count / (res_avago * trans) * 360.0)) - 30;
 }
-
-// Converts encoder counts to position (mm) for Axis 3
+// Converts encoder counts to position (mm) for Axis 3 (Rack and Pinion)
 float Ax3toAngle(long count) {
-    float D = 19.10; // Diameter of the pulley (mm)
-    float ref = 360; // Reference angle (degrees)
-    return (PI * D * (float)count * res_avago) / ref;
+    float pinion_pitch = 60.0; // Linear distance moved per revolution (mm/rev)
+    return ((float)count / res_avago) * pinion_pitch;
 }
-
 // Converts angle (degrees) to encoder counts for Axis 1
 int Ax1toCounts(float angle) {
     float trans = 20.000; // Gear reduction ratio

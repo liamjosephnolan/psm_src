@@ -91,6 +91,21 @@
 // Low-pass filter constant (tunable)
 #define LPF_ALPHA 1.0f // Alpha value for the low-pass filter (0 < LPF_ALPHA <= 1)
 
+
+// ----------------------
+// Sine Wave Parameters
+// ----------------------
+// Amplitudes (adjust units as needed: radians for angles, mm for insertion)
+#define ROLL_SINE_AMPLITUDE 20.0f   // Example amplitude for Roll
+#define PITCH_SINE_AMPLITUDE 15.0f  // Example amplitude for Pitch
+#define INSERTION_SINE_AMPLITUDE 100.0f // Example amplitude for Insertion
+
+// Periods in seconds
+#define ROLL_SINE_PERIOD 3.0f    // Example period for Roll in seconds
+#define PITCH_SINE_PERIOD 3.0f   // Example period for Pitch in seconds
+#define INSERTION_SINE_PERIOD 5.0f // Example period for Insertion in seconds
+
+
 // ----------------------
 // Global/External Variables
 // ----------------------

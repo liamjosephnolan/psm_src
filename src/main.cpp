@@ -1,5 +1,4 @@
-#include <Arduino.h>
-#include "config.h"
+#include "config.h" // All necessary libraries and macros are included here
 
 // ----------------------
 // Global ROS 2 Objects
@@ -9,10 +8,11 @@ rcl_subscription_t target_pose_subscriber;
 rcl_publisher_t sensor_data_publisher;
 rcl_publisher_t debug_publisher;
 rcl_publisher_t joint_telemetry_publisher;  // Telemetry publisher
-rcl_publisher_t gains_publisher;
+rcl_publisher_t gains_publisher; // Assuming this is declared but not initialized/used yet
 
+// Declare global message objects
 sensor_msgs__msg__JointState received_joint_state;
-sensor_msgs__msg__JointState target_pose_msg;
+sensor_msgs__msg__JointState target_pose_msg; // This is the one for /model_pose
 std_msgs__msg__Int32MultiArray sensor_data_msg;
 std_msgs__msg__String debug_msg;
 sensor_msgs__msg__JointState joint_telemetry_msg;
@@ -22,28 +22,37 @@ rclc_support_t support;
 rcl_allocator_t allocator;
 rcl_node_t node;
 
-// ----------------------
-// Servo and Motor Control
-// ---------------------- 
-Servo servo1, servo2, servo3, servo4;
+// --- Control Mode Variable ---
+// Set your desired default mode here.
+// Valid options: "target" (for ROS control) or "sin" (for sine wave control)
+String control_mode = "sin"; // <--- SET YOUR DESIRED MODE HERE PERMANENTLY
+unsigned long sine_wave_start_time_ms = 0; // To ensure smooth sine wave start
+// ----------------------------------
 
-CytronMD motor1(PWM_DIR, DC1_PWM, DC1_DIR);
+// ----------------------
+// Servo and Motor Control (instantiation of externs from config.h)
+// ----------------------
+Servo servo1, servo2, servo3, servo4; // Servo objects
+
+// Instantiate CytronMD motors directly using the enum from the library
+CytronMD motor1(PWM_DIR, DC1_PWM, DC1_DIR); // This uses the PWM_DIR enum member from CytronMotorDriver.h
 CytronMD motor2(PWM_DIR, DC2_PWM, DC2_DIR);
 CytronMD motor3(PWM_DIR, DC3_PWM, DC3_DIR);
-CytronMD motor[3] = {motor1, motor2, motor3};
+CytronMD motor[3] = {motor1, motor2, motor3}; // Array of motors
 
 // Servo Calibration Arrays
 int servo_off[4] = {100, 97, 90, 92};
 int servo_val[4] = {0, 0, 0, 0};
 
-// Initialize telemetry message variables
+// Initialize telemetry message variables (instantiation of externs from config.h)
 double actual_positions[3] = {0.0, 0.0, 0.0};
 double commanded_positions[3] = {0.0, 0.0, 0.0};
 double commanded_speeds[3] = {0.0, 0.0, 0.0};
 
-// Voltage variables for motors
+// Voltage variables for motors (instantiation of extern from config.h)
 int16_t roll_voltage = 0;
 int16_t pitch_voltage = 0;
+
 
 // ----------------------
 // Telemetry Static Buffers
@@ -57,6 +66,23 @@ double joint_efforts[JOINT_COUNT];
 
 int32_t sensor_data_array[3];
 char debug_data_buffer[128];
+
+// ----------------------
+// Static Buffers for *Received* Messages
+// ----------------------
+// For received_joint_state (from /mtm_joint_states, JOINT_COUNT joints)
+rosidl_runtime_c__String received_joint_state_names_array[JOINT_COUNT];
+char received_joint_state_names_data[JOINT_COUNT][32]; // Max name length for each string
+double received_joint_state_positions_array[JOINT_COUNT];
+double received_joint_state_velocities_array[JOINT_COUNT];
+double received_joint_state_efforts_array[JOINT_COUNT];
+
+// For target_pose_msg (from /model_pose, 3 elements for x, y, z)
+rosidl_runtime_c__String target_pose_msg_names_array[3];
+char target_pose_msg_names_data[3][32]; // Max name length for each string
+double target_pose_msg_positions_array[3];
+double target_pose_msg_velocities_array[3];
+double target_pose_msg_efforts_array[3];
 
 // ----------------------
 // Coupling Matrix Function
@@ -88,21 +114,24 @@ void calculate_disk_movements(float roll, float pitch, float yaw, float grip, fl
 
 // Joint state callback for grasper joints
 void joint_state_callback(const void *msgin) {
-    publish_debug_message("Received joint state message");
+
     const sensor_msgs__msg__JointState *msg = (const sensor_msgs__msg__JointState *)msgin;
 
+    // Check if the received message has enough data.
+    // The sizes are populated by micro-ROS upon reception.
     if (msg->position.size < 7 || msg->position.data == NULL) {
         publish_debug_message("[WARN] Invalid joint state message.");
         return;
     }
 
     // Extract joint positions
+    // These indices (6, 5, 4, 3) map to specific joints based on the MTM's JointState message structure
     float g0 = msg->position.data[6]; // Grasper pinch
     float g1 = msg->position.data[5]; // Grasper tilt
     float g2 = msg->position.data[4]; // Grasper pitch
     float g3 = msg->position.data[3]; // Grasper roll
 
-    // Calculate disk movements
+    // Calculate disk movements for servos based on grasper joint commands
     float disk_movements[4];
     calculate_disk_movements(g3, g2, g1, g0, disk_movements);
 
@@ -113,39 +142,59 @@ void joint_state_callback(const void *msgin) {
     disk_movements[3] += servo_off[1];
 
     // Command servos
-    servo1.write(disk_movements[2]);
-    servo2.write(disk_movements[3]);
-    servo3.write(disk_movements[1]);
-    servo4.write(disk_movements[0]);
+    servo1.write(static_cast<int>(disk_movements[2]));
+    servo2.write(static_cast<int>(disk_movements[3]));
+    servo3.write(static_cast<int>(disk_movements[1]));
+    servo4.write(static_cast<int>(disk_movements[0]));
 
     // Store commanded servo values in telemetry effort field
-    joint_telemetry_msg.effort.data[3] = disk_movements[2];
-    joint_telemetry_msg.effort.data[4] = disk_movements[3];
-    joint_telemetry_msg.effort.data[5] = disk_movements[1];
-    joint_telemetry_msg.effort.data[6] = disk_movements[0];
+    // Ensure JOINT_COUNT is large enough (at least 7) to avoid out-of-bounds access
+    if (JOINT_COUNT >= 7) {
+        joint_telemetry_msg.effort.data[3] = disk_movements[2];
+        joint_telemetry_msg.effort.data[4] = disk_movements[3];
+        joint_telemetry_msg.effort.data[5] = disk_movements[1];
+        joint_telemetry_msg.effort.data[6] = disk_movements[0];
+    } else {
+        publish_debug_message("[ERROR] JOINT_COUNT too small for servo telemetry!");
+    }
 }
 
 // Target pose callback (now receiving a JointState message with positions x, y, z)
 void target_pose_callback(const void *msgin) {
-    publish_debug_message("Received target pose message");
+
     const sensor_msgs__msg__JointState *msg = (const sensor_msgs__msg__JointState *)msgin;
 
+    // Check if the received message has enough data.
+    // The sizes are populated by micro-ROS upon reception.
+    if (msg->position.size < 3 || msg->position.data == NULL) {
+        publish_debug_message("[WARN] Invalid target pose message.");
+        return;
+    }
 
-    // Store x, y, z positions in telemetry effort fields
-    joint_telemetry_msg.effort.data[0] = msg->position.data[0]; // x
-    joint_telemetry_msg.effort.data[1] = msg->position.data[1]; // y
-    joint_telemetry_msg.effort.data[2] = msg->position.data[2]; // z
+    // Only update commanded_positions from ROS if control_mode is "target"
+    if (control_mode == "target") {
+        commanded_positions[0] = msg->position.data[0]; // Target value for roll equivalent
+        commanded_positions[1] = msg->position.data[1]; // Target value for pitch equivalent
+        commanded_positions[2] = msg->position.data[2]; // Target value for insertion equivalent
+    }
 
-    double x_target = msg->position.data[0];
-    double y_target = msg->position.data[1];
-    double z_target = msg->position.data[2];
+    // You might still want to compute PSM joint angles for internal logic or just store them
+    // regardless of whether they are directly commanded.
+    // For this example, we assume computePSMJointAngles takes x,y,z and returns the corresponding
+    // roll, pitch, insertion angles/positions (q1, q2, q3).
+    JointAngles angles = computePSMJointAngles(msg->position.data[0], msg->position.data[1], msg->position.data[2]);
 
-    JointAngles angles = computePSMJointAngles(x_target, y_target, z_target);
-
-    joint_telemetry_msg.position.data[0] = angles.q1; // Roll
-    joint_telemetry_msg.position.data[1] = angles.q2; // Pitch
-    joint_telemetry_msg.position.data[2] = angles.q3; // Insertion
-    
+    // Store computed angles in telemetry position fields
+    // These are typically the calculated angles/positions for the arm based on received x,y,z,
+    // not necessarily the values directly commanded to the motors (which come from commanded_positions
+    // or sine wave). You might want to adjust what goes into these telemetry fields depending on your needs.
+    if (JOINT_COUNT >= 3) {
+        joint_telemetry_msg.position.data[0] = angles.q1; // Roll (computed from IK)
+        joint_telemetry_msg.position.data[1] = angles.q2; // Pitch (computed from IK)
+        joint_telemetry_msg.position.data[2] = angles.q3; // Insertion (computed from IK)
+    } else {
+        publish_debug_message("[ERROR] JOINT_COUNT too small for angle telemetry!");
+    }
 }
 
 // ----------------------
@@ -162,9 +211,10 @@ void init_joint_telemetry_message() {
     for (size_t i = 0; i < JOINT_COUNT; i++) {
         rosidl_runtime_c__String__init(&joint_names[i]);
         joint_names[i].data = joint_names_data[i];
-        joint_names[i].size = strlen(names[i]);
+        joint_names[i].size = strlen(names[i]); // Set initial size
         joint_names[i].capacity = sizeof(joint_names_data[i]);
-        strncpy(joint_names[i].data, names[i], joint_names[i].capacity);
+        strncpy(joint_names[i].data, names[i], joint_names[i].capacity - 1); // Copy name
+        joint_names[i].data[joint_names[i].capacity - 1] = '\0'; // Ensure null termination
     }
 
     // Set telemetry arrays
@@ -175,7 +225,7 @@ void init_joint_telemetry_message() {
     joint_telemetry_msg.velocity.data = joint_velocities;
     joint_telemetry_msg.velocity.size = JOINT_COUNT;
     joint_telemetry_msg.velocity.capacity = JOINT_COUNT;
- 
+
     joint_telemetry_msg.effort.data = joint_efforts;
     joint_telemetry_msg.effort.size = JOINT_COUNT;
     joint_telemetry_msg.effort.capacity = JOINT_COUNT;
@@ -188,46 +238,33 @@ void init_joint_telemetry_message() {
     }
 }
 
-
-
-void publish_joint_telemetry(double* actual_positions, double* commanded_positions, double* commanded_speeds) {
-
-    // Update message dataMore actions
-
+void publish_joint_telemetry(double* actual_positions_arr, double* commanded_positions_arr, double* commanded_speeds_arr) {
+    // Update message data for the arm joints (Roll, Pitch, Insertion)
+    // Note: Parameter names changed to avoid shadowing global variables.
     for (int i = 0; i < 3; i++) {
-
-        joint_telemetry_msg.position.data[i] = actual_positions[i];     // Actual positions
-
-        joint_telemetry_msg.effort.data[i] = commanded_positions[i];   // Commanded positions
-
-        joint_telemetry_msg.velocity.data[i] = commanded_speeds[i];    // Commanded speeds
-
+        joint_telemetry_msg.position.data[i] = actual_positions_arr[i];     // Actual positions (roll, pitch, insertion)
+        joint_telemetry_msg.effort.data[i] = commanded_positions_arr[i];   // Commanded positions (from ROS topic or sine wave)
+        joint_telemetry_msg.velocity.data[i] = commanded_speeds_arr[i];    // Commanded speeds (roll, pitch, insertion speeds)
     }
-
-
+    // Servo data (indices 3-6) are updated in joint_state_callback.
 
     // Update header timestamp (optional but recommended)
-
     int64_t time_ms = millis();
-
     joint_telemetry_msg.header.stamp.sec = time_ms / 1000;
-
     joint_telemetry_msg.header.stamp.nanosec = (time_ms % 1000) * 1000000;
 
-
-
     // Publish
-
     RCSOFTCHECK(rcl_publish(&joint_telemetry_publisher, &joint_telemetry_msg, NULL));
-
 }
+
+
 // ----------------------
 // Setup Function
 // ----------------------
 void setup() {
-    Serial.begin(921600);
-    set_microros_serial_transports(Serial);
-    delay(2000);
+    // Serial.begin(921600); // Initialize Serial for debug and commands - REMOVED
+    set_microros_serial_transports(Serial); // Keep this if micro-ROS uses Serial for transport
+    delay(2000); // Give time for micro-ROS to connect/board to stabilize
 
     // Configure limit switch pins
     pinMode(LS1_NO, INPUT_PULLUP);
@@ -248,7 +285,7 @@ void setup() {
     servo4.write(servo_off[3]);
 
     // Set PWM frequency for DC motor control
-    float PWM_freq = 18500.0;
+    float PWM_freq = 18500.0; // Typically high frequency for smoother DC motor control
     analogWriteFrequency(DC1_PWM, PWM_freq);
     analogWriteFrequency(DC2_PWM, PWM_freq);
     analogWriteFrequency(DC3_PWM, PWM_freq);
@@ -256,8 +293,7 @@ void setup() {
     // micro-ROS allocator, support and node init
     allocator = rcl_get_default_allocator();
     RCCHECK(rclc_support_init(&support, 0, NULL, &allocator));
-    RCCHECK(rclc_node_init_default(&node, "psm_sensor_node", "", 
-&support));
+    RCCHECK(rclc_node_init_default(&node, "psm_sensor_node", "", &support));
 
     // Subscriptions
     RCCHECK(rclc_subscription_init_default(
@@ -294,107 +330,90 @@ void setup() {
     // Initialize debug message buffer
     debug_msg.data.data = debug_data_buffer;
     debug_msg.data.size = 0;
-    debug_msg.data.capacity = sizeof(debug_data_buffer);
+    debug_msg.data.capacity = sizeof(debug_data_buffer); // FIXED: Changed debug_msg.capacity to debug_msg.data.capacity
 
     // Initialize telemetry message
     init_joint_telemetry_message();
 
-    // Allocate received_joint_state buffers (JOINT_COUNT is 7)
-    received_joint_state.name.data = (rosidl_runtime_c__String 
-*)malloc(JOINT_COUNT * sizeof(rosidl_runtime_c__String));
-    received_joint_state.name.size = JOINT_COUNT;
-    received_joint_state.name.capacity = JOINT_COUNT;
+    // *******************************************************************
+    // CRITICAL CHANGE: Use static buffers for received messages
+    // instead of malloc. micro-ROS manages filling these.
+    // *******************************************************************
 
-    for (size_t i = 0; i < received_joint_state.name.size; i++) {
-        
-rosidl_runtime_c__String__init(&received_joint_state.name.data[i]);
-        received_joint_state.name.data[i].data = (char *)malloc(32); // Max name length
-        received_joint_state.name.data[i].capacity = 32;
-        received_joint_state.name.data[i].size = 0;
+    // Initialize received_joint_state buffers (JOINT_COUNT is 7)
+    received_joint_state.name.data = received_joint_state_names_array;
+    received_joint_state.name.size = JOINT_COUNT; // Initial size, will be updated by rclc
+    received_joint_state.name.capacity = JOINT_COUNT;
+    for (size_t i = 0; i < JOINT_COUNT; i++) {
+        rosidl_runtime_c__String__init(&received_joint_state.name.data[i]);
+        received_joint_state.name.data[i].data = received_joint_state_names_data[i];
+        received_joint_state.name.data[i].capacity = sizeof(received_joint_state_names_data[i]);
+        received_joint_state.name.data[i].size = 0; // Initial size, will be updated by rclc
     }
 
-    received_joint_state.position.data = (double *)malloc(JOINT_COUNT * sizeof(double));
-    received_joint_state.position.size = JOINT_COUNT;
+    received_joint_state.position.data = received_joint_state_positions_array;
+    received_joint_state.position.size = JOINT_COUNT; // Initial size, will be updated by rclc
     received_joint_state.position.capacity = JOINT_COUNT;
 
-    // The following fields can be NULL if you don't intend to read them from the MTM joint states
-    // but it's generally safer to allocate them if they are part of the message type
-    received_joint_state.velocity.data = (double *)malloc(JOINT_COUNT * sizeof(double));
-    received_joint_state.velocity.size = JOINT_COUNT;
+    received_joint_state.velocity.data = received_joint_state_velocities_array;
+    received_joint_state.velocity.size = JOINT_COUNT; // Initial size, will be updated by rclc
     received_joint_state.velocity.capacity = JOINT_COUNT;
-    if (received_joint_state.velocity.data) { // Check for successful allocation
-        for (size_t i = 0; i < received_joint_state.velocity.size; i++) received_joint_state.velocity.data[i] = 0.0;
-    }
 
-    received_joint_state.effort.data = (double *)malloc(JOINT_COUNT * sizeof(double));
-    received_joint_state.effort.size = JOINT_COUNT;
+    received_joint_state.effort.data = received_joint_state_efforts_array;
+    received_joint_state.effort.size = JOINT_COUNT; // Initial size, will be updated by rclc
     received_joint_state.effort.capacity = JOINT_COUNT;
-    if (received_joint_state.effort.data) { // Check for successful allocation
-        for (size_t i = 0; i < received_joint_state.effort.size; i++) received_joint_state.effort.data[i] = 0.0;
-    }
 
 
-    // Allocate target_pose_msg buffers (3 for x, y, z)
-    // Make sure to match the expected incoming message structure exactly.
-    // The topic echo shows 'name', 'position', 'velocity', 'effort' with 3 elements each.
-    target_pose_msg.name.data = (rosidl_runtime_c__String *)malloc(3 * sizeof(rosidl_runtime_c__String));
-    target_pose_msg.name.size = 3;
+    // Initialize target_pose_msg buffers (3 for x, y, z)
+    target_pose_msg.name.data = target_pose_msg_names_array;
+    target_pose_msg.name.size = 3; // Initial size, will be updated by rclc
     target_pose_msg.name.capacity = 3;
-    
     const char* target_names[3] = {"x", "y", "z"}; // Populate names as they appear in the message
     for (size_t i = 0; i < target_pose_msg.name.size; i++) {
-        
-rosidl_runtime_c__String__init(&target_pose_msg.name.data[i]);
-        target_pose_msg.name.data[i].data = (char *)malloc(32); // Max name length
-        target_pose_msg.name.data[i].capacity = 32;
+        rosidl_runtime_c__String__init(&target_pose_msg.name.data[i]);
+        target_pose_msg.name.data[i].data = target_pose_msg_names_data[i];
+        target_pose_msg.name.data[i].capacity = sizeof(target_pose_msg_names_data[i]);
         strncpy(target_pose_msg.name.data[i].data, target_names[i], target_pose_msg.name.data[i].capacity - 1);
         target_pose_msg.name.data[i].data[target_pose_msg.name.data[i].capacity - 1] = '\0'; // Ensure null termination
-        target_pose_msg.name.data[i].size = strlen(target_pose_msg.name.data[i].data);
-    }
-    
-
-    target_pose_msg.position.data = (double *)malloc(3 * sizeof(double));
-    target_pose_msg.position.size = 3;
-    target_pose_msg.position.capacity = 3;    
-    if (target_pose_msg.position.data) {
-        for (size_t i = 0; i < target_pose_msg.position.size; i++) target_pose_msg.position.data[i] = 0.0;
+        target_pose_msg.name.data[i].size = strlen(target_names[i]); // Set initial size based on copied string
     }
 
-    // IMPORTANT: Allocate memory for velocity and effort fields for target_pose_msg
-    // even if you don't directly use them in the callback, as they are part of the JointState message structure.
-    target_pose_msg.velocity.data = (double *)malloc(3 * sizeof(double));
-    target_pose_msg.velocity.size = 3;
+
+    target_pose_msg.position.data = target_pose_msg_positions_array;
+    target_pose_msg.position.size = 3; // Initial size, will be updated by rclc
+    target_pose_msg.position.capacity = 3;
+
+    target_pose_msg.velocity.data = target_pose_msg_velocities_array;
+    target_pose_msg.velocity.size = 3; // Initial size, will be updated by rclc
     target_pose_msg.velocity.capacity = 3;
-    if (target_pose_msg.velocity.data) {
-        for (size_t i = 0; i < target_pose_msg.velocity.size; i++) target_pose_msg.velocity.data[i] = 0.0;
-    }
 
-    target_pose_msg.effort.data = (double *)malloc(3 * sizeof(double));
-    target_pose_msg.effort.size = 3;
+    target_pose_msg.effort.data = target_pose_msg_efforts_array;
+    target_pose_msg.effort.size = 3; // Initial size, will be updated by rclc
     target_pose_msg.effort.capacity = 3;
-    if (target_pose_msg.effort.data) {
-        for (size_t i = 0; i < target_pose_msg.effort.size; i++) target_pose_msg.effort.data[i] = 0.0;
-    }
 
 
     // Executor for 2 subscriptions
-    RCCHECK(rclc_executor_init(&executor, &support.context, 2, 
-&allocator));
+    RCCHECK(rclc_executor_init(&executor, &support.context, 2, &allocator));
     RCCHECK(rclc_executor_add_subscription(
-        &executor, &joint_state_subscriber, 
-&received_joint_state, &joint_state_callback, ON_NEW_DATA));
+        &executor, &joint_state_subscriber,
+        &received_joint_state, &joint_state_callback, ON_NEW_DATA));
     RCCHECK(rclc_executor_add_subscription(
-        &executor, &target_pose_subscriber, 
-&target_pose_msg, &target_pose_callback, ON_NEW_DATA));
+        &executor, &target_pose_subscriber,
+        &target_pose_msg, &target_pose_callback, ON_NEW_DATA));
 
     // Publish initial debug message
-    publish_debug_message("Setup Complete");
+    publish_debug_message(("Setup Complete. Control mode set to " + control_mode + ".").c_str()); // FIXED: .c_str() added
     delay(1000);
 
     home_motors();
     delay(2500); // Delay for ease of use
-}
 
+    // Set sine wave start time when setup completes, so it always starts from 0 when Arduino boots
+    // Only relevant if control_mode is "sin"
+    if (control_mode == "sin") {
+        sine_wave_start_time_ms = millis();
+    }
+}
 
 // ----------------------
 // Loop Function
@@ -405,9 +424,31 @@ void loop() {
     actual_positions[1] = Ax2toAngle(Enc2.read()); // Pitch
     actual_positions[2] = Ax3toAngle(Enc3.read()); // Insertion
 
-    // 2. Get desired target angles (already implemented)
-    double target_roll_angle = commanded_positions[0]; // Target roll angle
-    double target_pitch_angle = commanded_positions[1]; // Target pitch angle
+    // --- REMOVED: Serial Command for Mode Toggle ---
+    // The control_mode is now fixed at compile time or set once in setup().
+    // Remove the entire 'if (Serial.available())' block.
+    // ------------------------------------------
+
+    // 2. Determine desired target angles/positions based on control_mode
+    double target_roll_angle;
+    double target_pitch_angle;
+    double target_insertion_position;
+
+    if (control_mode == "sin") {
+        float time_s = (millis() - sine_wave_start_time_ms) / 1000.0f; // Time in seconds, make sure this is float arithmetic
+
+        // Calculate sine wave targets for each DOF using the #defined constants
+        target_roll_angle = ROLL_SINE_AMPLITUDE * sin(2.0f * M_PI * time_s / ROLL_SINE_PERIOD);
+        // target_roll_angle = 0.0f; // Roll is not used in sine wave control, set to 0
+        // target_pitch_angle = PITCH_SINE_AMPLITUDE * sin(2.0f * M_PI * time_s / PITCH_SINE_PERIOD);
+        target_pitch_angle = 0.0f; // Pitch is not used in sine wave control, set to 0
+        // target_insertion_position = INSERTION_SINE_AMPLITUDE * sin(2.0f * M_PI * time_s / INSERTION_SINE_PERIOD);
+    } else { // control_mode == "target"
+        // Use values received from ROS /model_pose topic (updated in target_pose_callback)
+        target_roll_angle = commanded_positions[0];
+        target_pitch_angle = commanded_positions[1];
+        target_insertion_position = commanded_positions[2];
+    }
 
     // 3. Calculate gains using gain scheduling functions
     Gains roll_gains = getRollGains(actual_positions[0], actual_positions[1]); // Roll gains
@@ -415,32 +456,62 @@ void loop() {
 
     // 4. Command joints using LQI controller
     // Roll axis control
+    // Note: compute_roll_LQR_control expects float* gains, commanded_position (float), actual_position (float)
     float roll_lqi_gains[2] = {static_cast<float>(roll_gains.Kp), static_cast<float>(roll_gains.Kd)};
+    float roll_lqr_gains[2] = {35.0f,0.0f};
     float roll_speed = compute_roll_LQR_control(
-        roll_lqi_gains,       // Gains for roll
-        target_roll_angle,    // Target roll angle
-        actual_positions[0]   // Actual roll position
+        roll_lqr_gains,       // Gains for roll
+        static_cast<float>(target_roll_angle),    // Target roll angle (from chosen mode)
+        static_cast<float>(actual_positions[0])   // Actual roll position
     );
     motor1.setSpeed(static_cast<int16_t>(roll_speed)); // Apply roll control
-    commanded_speeds[0] = roll_speed; // Store commanded roll speed
+    commanded_speeds[0] = roll_speed; // Store commanded roll speed for telemetry
 
     // Pitch axis control
-    float pitch_lqi_gains[3] = {static_cast<float>(pitch_gains.Kp), 
-                                static_cast<float>(pitch_gains.Kd), 
+    // Note: compute_pitch_LQI_control expects float* gains, commanded_position (float), actual_position (float)
+    float pitch_lqi_gains[3] = {static_cast<float>(pitch_gains.Kp),
+                                static_cast<float>(pitch_gains.Kd),
                                 static_cast<float>(pitch_gains.Ki)};
     float pitch_speed = compute_pitch_LQI_control(
         pitch_lqi_gains,      // Gains for pitch
-        target_pitch_angle,   // Target pitch angle
-        actual_positions[1]   // Actual pitch position
+        static_cast<float>(target_pitch_angle),   // Target pitch angle (from chosen mode)
+        static_cast<float>(actual_positions[1])   // Actual pitch position
     );
+    // Hard-coded pitch gains
+    // float pitch_lqi_gains[3] = {60.0f, 0.0f, 0.0f}; // Kp, Kd, Ki
+    // float pitch_speed = compute_pitch_LQI_control(
+    //     pitch_lqi_gains,                      // Gains for pitch
+    //     static_cast<float>(target_pitch_angle), // Target pitch angle
+    //     static_cast<float>(actual_positions[1]) // Actual pitch position
+    // );
     motor2.setSpeed(static_cast<int16_t>(pitch_speed)); // Apply pitch control
-    commanded_speeds[1] = pitch_speed; // Store commanded pitch speed
+    commanded_speeds[1] = pitch_speed; // Store commanded pitch speed for telemetry
+
+    // Insertion axis control (motor3)
+    float insertion_error = static_cast<float>(target_insertion_position - actual_positions[2]);
+    float insertion_speed = 30.0f * insertion_error; // Calculate speed based on error (P-control like)
+
+    // Clamp the speed to the range [-100, 100] (assuming motor.setSpeed takes -100 to 100)
+    insertion_speed = std::max(-100.0f, std::min(100.0f, insertion_speed));
+
+    // Apply insertion control
+    motor3.setSpeed(static_cast<int16_t>(insertion_speed)); // Apply clamped speed
+    commanded_speeds[2] = insertion_speed; // Store commanded insertion speed for telemetry
+
+    // Update commanded_positions for telemetry based on active mode
+    // This ensures that `joint_telemetry_msg.effort.data[0-2]` (which is mapped to commanded_positions)
+    // reflects the commanded value from either ROS or sine wave.
+    if (control_mode == "sin") {
+        commanded_positions[0] = target_roll_angle;
+        commanded_positions[1] = target_pitch_angle;
+        commanded_positions[2] = target_insertion_position;
+    } // If "target" mode, commanded_positions are already updated by target_pose_callback
 
     // 5. Read raw sensor data
     read_encoder_data(&sensor_data_msg);
     RCSOFTCHECK(rcl_publish(&sensor_data_publisher, &sensor_data_msg, NULL));
 
-    // 6. Process incoming ROS messages
+    // 6. Process incoming ROS messages (this updates received_joint_state and target_pose_msg)
     RCSOFTCHECK(rclc_executor_spin_some(&executor, 10));
 
     // 7. Publish telemetry
@@ -449,8 +520,6 @@ void loop() {
     // 8. Maintain loop timing
     delay(2); // Sampling rate of 500 Hz (2 ms per iteration)
 }
-
-
 // PRBS Characterization DO NOT DELETE
 // void loop() {
 //     static unsigned long start_time = millis(); // Record the start time
