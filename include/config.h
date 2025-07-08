@@ -39,6 +39,8 @@
 #include <cstring>
 #include <vector>
 #include <utility>
+#include <fstream>
+#include <sstream>
 
 // -----Joint Definitions-----
 #define JOINT_COUNT 7
@@ -165,6 +167,21 @@ struct Gains {
     double Kd;
     double Ki;
 };
+
+// ----------------------
+// Trajectory Following
+// ----------------------
+// Struct for trajectory points
+struct TrajPoint {
+    double time;
+    double x;
+    double y;
+    double z;
+};
+
+// Extern declarations for trajectory data
+extern std::vector<TrajPoint> trajectory;
+extern void parse_traj_file();
 
 // ----------------------
 // Function Declarations

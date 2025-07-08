@@ -36,10 +36,7 @@ JointAngles computePSMJointAngles(double x_p, double y_p, double z_p) {
     yaw = constrain_value(yaw, -20.0, 20.0);
     angles.q1 = static_cast<float>(yaw);
 
-    // telemetry publishing
-    commanded_positions[0] = angles.q1;
-    commanded_positions[1] = angles.q2;
-    commanded_positions[2] = angles.q3;
+    
 
     return angles;
 }

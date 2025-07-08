@@ -25,8 +25,24 @@ rcl_node_t node;
 // --- Control Mode Variable ---
 // Set your desired default mode here.
 // Valid options: "target" (for ROS control) or "sin" (for sine wave control)
-String control_mode = "sin"; // <--- SET YOUR DESIRED MODE HERE PERMANENTLY
+String control_mode = "traj"; // <--- SET YOUR DESIRED MODE HERE PERMANENTLY
 unsigned long sine_wave_start_time_ms = 0; // To ensure smooth sine wave start
+
+// --- Trajectory Control State Machine ---
+// This enum defines the different states the trajectory mode can be in.
+enum TrajectoryState {
+    INITIAL_HOLD, // The initial phase, holding the first position.
+    EXECUTING,    // Actively following the trajectory points.
+    FINISHED      // The final phase, holding the last position.
+};
+TrajectoryState traj_state = INITIAL_HOLD; // Start in the initial hold state.
+
+// Trajectory variables
+std::vector<TrajPoint> trajectory; // Holds the parsed trajectory data.
+int traj_index = 0; // The current index in the trajectory vector.
+unsigned long traj_start_time = 0; // Timestamp for when trajectory execution begins (after the hold).
+unsigned long initial_hold_start_time = 0; // Timestamp for when the initial hold period starts.
+
 // ----------------------------------
 
 // ----------------------
@@ -84,6 +100,8 @@ double target_pose_msg_positions_array[3];
 double target_pose_msg_velocities_array[3];
 double target_pose_msg_efforts_array[3];
 
+
+
 // ----------------------
 // Coupling Matrix Function
 // ----------------------
@@ -107,6 +125,8 @@ void calculate_disk_movements(float roll, float pitch, float yaw, float grip, fl
         }
     }
 }
+
+
 
 // ----------------------
 // ROS Callbacks
@@ -171,23 +191,17 @@ void target_pose_callback(const void *msgin) {
         return;
     }
 
-    // Only update commanded_positions from ROS if control_mode is "target"
-    if (control_mode == "target") {
-        commanded_positions[0] = msg->position.data[0]; // Target value for roll equivalent
-        commanded_positions[1] = msg->position.data[1]; // Target value for pitch equivalent
-        commanded_positions[2] = msg->position.data[2]; // Target value for insertion equivalent
-    }
-
-    // You might still want to compute PSM joint angles for internal logic or just store them
-    // regardless of whether they are directly commanded.
-    // For this example, we assume computePSMJointAngles takes x,y,z and returns the corresponding
-    // roll, pitch, insertion angles/positions (q1, q2, q3).
+    // Compute PSM joint angles from the received x, y, z positions
     JointAngles angles = computePSMJointAngles(msg->position.data[0], msg->position.data[1], msg->position.data[2]);
 
+    // Only update commanded_positions from ROS if control_mode is "target"
+    if (control_mode == "target") {
+        commanded_positions[0] = angles.q1; // Target value for roll equivalent
+        commanded_positions[1] = angles.q2; // Target value for pitch equivalent
+        commanded_positions[2] = angles.q3; // Target value for insertion equivalent
+    }
+
     // Store computed angles in telemetry position fields
-    // These are typically the calculated angles/positions for the arm based on received x,y,z,
-    // not necessarily the values directly commanded to the motors (which come from commanded_positions
-    // or sine wave). You might want to adjust what goes into these telemetry fields depending on your needs.
     if (JOINT_COUNT >= 3) {
         joint_telemetry_msg.position.data[0] = angles.q1; // Roll (computed from IK)
         joint_telemetry_msg.position.data[1] = angles.q2; // Pitch (computed from IK)
@@ -413,6 +427,14 @@ void setup() {
     if (control_mode == "sin") {
         sine_wave_start_time_ms = millis();
     }
+
+    if (control_mode == "traj") {
+        parse_traj_file();
+        initial_hold_start_time = millis(); // Start the 10-second hold timer.
+        char debug_msg_buffer[128];
+        snprintf(debug_msg_buffer, sizeof(debug_msg_buffer), "Trajectory mode initialized. Trajectory size: %d. Starting initial hold.", trajectory.size());
+        publish_debug_message(debug_msg_buffer);
+    }
 }
 
 // ----------------------
@@ -430,9 +452,9 @@ void loop() {
     // ------------------------------------------
 
     // 2. Determine desired target angles/positions based on control_mode
-    double target_roll_angle;
-    double target_pitch_angle;
-    double target_insertion_position;
+    double target_roll_angle = 0.0;
+    double target_pitch_angle = 0.0;
+    double target_insertion_position = 0.0;
 
     if (control_mode == "sin") {
         float time_s = (millis() - sine_wave_start_time_ms) / 1000.0f; // Time in seconds, make sure this is float arithmetic
@@ -443,22 +465,127 @@ void loop() {
         // target_pitch_angle = PITCH_SINE_AMPLITUDE * sin(2.0f * M_PI * time_s / PITCH_SINE_PERIOD);
         target_pitch_angle = 0.0f; // Pitch is not used in sine wave control, set to 0
         // target_insertion_position = INSERTION_SINE_AMPLITUDE * sin(2.0f * M_PI * time_s / INSERTION_SINE_PERIOD);
+    } else if (control_mode == "traj") {
+        if (!trajectory.empty()) { // Ensure the trajectory is not empty before proceeding.
+            switch (traj_state) {
+                case INITIAL_HOLD: {
+                    // Command the system to the first point of the trajectory.
+
+                    JointAngles angles = computePSMJointAngles(trajectory[0].x,trajectory[0].y, trajectory[0].z);
+                    target_roll_angle = angles.q1; // Roll equivalent
+                    target_pitch_angle = angles.q2; // Pitch equivalent
+                    target_insertion_position = angles.q3; // Insertion equivalent
+                    
+                    {
+                        char debug_msg_buffer[128];
+                        snprintf(debug_msg_buffer, sizeof(debug_msg_buffer), "INITIAL_HOLD: Commanding to (%.4f, %.4f, %.4f)", angles.q1,angles.q2, angles.q3);
+                        publish_debug_message(debug_msg_buffer);
+                    }
+
+                    // Check if the 10-second hold time has elapsed.
+                    if (millis() - initial_hold_start_time > 10000) {
+                        traj_state = EXECUTING; // Transition to the executing state.
+                        traj_start_time = millis(); // Record the start time for trajectory execution.
+                        traj_index = 0; // Reset index to start from the beginning of the trajectory.
+                        publish_debug_message("Transitioning from INITIAL_HOLD to EXECUTING.");
+                    }
+                    break;
+                }
+
+                case EXECUTING: {
+                    double elapsed_time = (millis() - traj_start_time) / 1000.0;
+
+                    // Find the current segment of the trajectory
+                    // traj_index should point to the *start* of the current segment
+                    while (static_cast<size_t>(traj_index) < trajectory.size() - 1 && elapsed_time >= trajectory[traj_index + 1].time) {
+                        traj_index++;
+                    }
+
+                    if (static_cast<size_t>(traj_index) < trajectory.size()) {
+                        TrajPoint p0 = trajectory[traj_index];
+                        
+                        // If we are at the last point or beyond, just command the last point
+                        if (static_cast<size_t>(traj_index) == trajectory.size() - 1 || elapsed_time >= p0.time) {
+                            JointAngles angles = computePSMJointAngles(p0.x,p0.y, p0.z);
+                            target_roll_angle = angles.q1; // Roll equivalent
+                            target_pitch_angle = angles.q2; // Pitch equivalent
+                            target_insertion_position = angles.q3; // Insertion equivalent
+                            
+                            // If we've reached the end of the trajectory, transition to FINISHED
+                            if (static_cast<size_t>(traj_index) == trajectory.size() - 1 && elapsed_time >= p0.time) {
+                                traj_state = FINISHED;
+                                publish_debug_message("Transitioning from EXECUTING to FINISHED.");
+                            }
+                        } else {
+                            // Interpolate between the current point (p0) and the next point (p1)
+                            TrajPoint p1 = trajectory[traj_index + 1];
+                            double segment_duration = p1.time - p0.time;
+                            double time_in_segment = elapsed_time - p0.time;
+                            double ratio = (segment_duration > 0) ? (time_in_segment / segment_duration) : 0.0;
+
+                            target_roll_angle = p0.x + ratio * (p1.x - p0.x);
+                            target_pitch_angle = p0.y + ratio * (p1.y - p0.y);
+                            target_insertion_position = p0.z + ratio * (p1.z - p0.z);
+                            JointAngles angles = computePSMJointAngles(target_roll_angle,target_pitch_angle, target_insertion_position);
+                            target_roll_angle = angles.q1; // Roll equivalent
+                            target_pitch_angle = angles.q2; // Pitch equivalent
+                            target_insertion_position = angles.q3; // Insertion equivalent
+                        }
+
+                        commanded_positions[0] = target_roll_angle;
+                        commanded_positions[1] = target_pitch_angle;
+                        commanded_positions[2] = target_insertion_position;
+
+                        char debug_msg_buffer[128];
+                        snprintf(debug_msg_buffer, sizeof(debug_msg_buffer), "EXECUTING: t_elapsed=%.2f, traj_idx=%d, x=%.4f, y=%.4f, z=%.4f", elapsed_time, traj_index, target_roll_angle, target_pitch_angle, target_insertion_position);
+                        publish_debug_message(debug_msg_buffer);
+
+                    } else {
+                        // This case should ideally be caught by the while loop and transition to FINISHED
+                        // but as a fallback, if somehow traj_index goes out of bounds, transition to FINISHED.
+                        traj_state = FINISHED;
+                        publish_debug_message("Transitioning from EXECUTING to FINISHED (fallback).");
+                    }
+                    break;
+                }
+
+                case FINISHED: {
+                    // Hold the last commanded position indefinitely.
+                    target_roll_angle = commanded_positions[0];
+                    target_pitch_angle = commanded_positions[1];
+                    target_insertion_position = commanded_positions[2];
+                    publish_debug_message("FINISHED: Holding last position.");
+                    break;
+                }
+            }
+        }
     } else { // control_mode == "target"
         // Use values received from ROS /model_pose topic (updated in target_pose_callback)
+        publish_debug_message("TARGET MODE ENTER");
         target_roll_angle = commanded_positions[0];
         target_pitch_angle = commanded_positions[1];
         target_insertion_position = commanded_positions[2];
     }
 
     // 3. Calculate gains using gain scheduling functions
-    Gains roll_gains = getRollGains(actual_positions[0], actual_positions[1]); // Roll gains
-    Gains pitch_gains = getPitchGains(actual_positions[1], actual_positions[0]); // Pitch gains
+    // Gains pitch_gains = getPitchGains(actual_positions[1], actual_positions[0]); // Pitch gains
+    // float pitch_lqi_gains[3] = {static_cast<float>(pitch_gains.Kp),
+    //     static_cast<float>(pitch_gains.Kd),
+    //     static_cast<float>(pitch_gains.Ki)};
+    // Gains roll_gains = getRollGains(actual_positions[1], actual_positions[0]);
+    // float roll_lqr_gains[2] = {static_cast<float>(roll_gains.Kp),
+    // static_cast<float>(roll_gains.Kd)};
+
+    // P control gains
+    float roll_lqr_gains[2] = {35.0f,0.0f};
+    float pitch_lqi_gains[3] = {60.0f,0.0f,0.0f};
+
+
+    
 
     // 4. Command joints using LQI controller
     // Roll axis control
-    // Note: compute_roll_LQR_control expects float* gains, commanded_position (float), actual_position (float)
-    float roll_lqi_gains[2] = {static_cast<float>(roll_gains.Kp), static_cast<float>(roll_gains.Kd)};
-    float roll_lqr_gains[2] = {35.0f,0.0f};
+
     float roll_speed = compute_roll_LQR_control(
         roll_lqr_gains,       // Gains for roll
         static_cast<float>(target_roll_angle),    // Target roll angle (from chosen mode)
@@ -468,10 +595,6 @@ void loop() {
     commanded_speeds[0] = roll_speed; // Store commanded roll speed for telemetry
 
     // Pitch axis control
-    // Note: compute_pitch_LQI_control expects float* gains, commanded_position (float), actual_position (float)
-    float pitch_lqi_gains[3] = {static_cast<float>(pitch_gains.Kp),
-                                static_cast<float>(pitch_gains.Kd),
-                                static_cast<float>(pitch_gains.Ki)};
     float pitch_speed = compute_pitch_LQI_control(
         pitch_lqi_gains,      // Gains for pitch
         static_cast<float>(target_pitch_angle),   // Target pitch angle (from chosen mode)
@@ -488,15 +611,17 @@ void loop() {
     commanded_speeds[1] = pitch_speed; // Store commanded pitch speed for telemetry
 
     // Insertion axis control (motor3)
-    float insertion_error = static_cast<float>(target_insertion_position - actual_positions[2]);
-    float insertion_speed = 30.0f * insertion_error; // Calculate speed based on error (P-control like)
+        // float insertion_error = static_cast<float>(target_insertion_position - actual_positions[2]);
+        // float insertion_speed = 30.0f * insertion_error; // Calculate speed based on error (P-control like)
 
-    // Clamp the speed to the range [-100, 100] (assuming motor.setSpeed takes -100 to 100)
-    insertion_speed = std::max(-100.0f, std::min(100.0f, insertion_speed));
+        // // Clamp the speed to the range [-100, 100] (assuming motor.setSpeed takes -100 to 100)
+        // insertion_speed = std::max(-100.0f, std::min(100.0f, insertion_speed));
 
-    // Apply insertion control
-    motor3.setSpeed(static_cast<int16_t>(insertion_speed)); // Apply clamped speed
-    commanded_speeds[2] = insertion_speed; // Store commanded insertion speed for telemetry
+        // // Apply insertion control
+        // motor3.setSpeed(static_cast<int16_t>(insertion_speed)); // Apply clamped speed
+        // commanded_speeds[2] = insertion_speed; // Store commanded insertion speed for telemetry
+
+
 
     // Update commanded_positions for telemetry based on active mode
     // This ensures that `joint_telemetry_msg.effort.data[0-2]` (which is mapped to commanded_positions)
