@@ -74,23 +74,6 @@ void home_motor3() {
     debug_log("Info", 1, "Already on limit switch. Zeroing encoder only.");
     Enc3.write(0);
     debug_log("Done", 1, "Encoder zeroed.");
-    // debug_log("Start", 2, "Driving toward limit switch...");
-
-    // motor[2].setSpeed(MOTOR3_SPEED);
-    // while (digitalRead(LS3_NO) == HIGH) {
-    //     delay(10);
-    // }
-
-    // motor[2].setSpeed(0);
-    // Enc3.write(0);
-    // debug_log("Info", 2, "Limit switch hit. Encoder zeroed.");
-
-    // // Optional backoff
-    // motor[2].setSpeed(-25);
-    // delay(MOTOR3_BACKOFF_TIME);
-    // motor[2].setSpeed(0);
-
-    // debug_log("Done", 2, "Homing complete.");
 }
 
 // ----------------------

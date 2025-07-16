@@ -23,8 +23,7 @@ rcl_allocator_t allocator;
 rcl_node_t node;
 
 // --- Control Mode Variable ---
-// Set your desired default mode here.
-// Valid options: "target" (for ROS control) or "sin" (for sine wave control)
+// Valid options: "target" (for ROS control) or "sin" (for sine wave control) or "traj" (for trajectory control)
 String control_mode = "traj"; // <--- SET YOUR DESIRED MODE HERE PERMANENTLY
 unsigned long sine_wave_start_time_ms = 0; // To ensure smooth sine wave start
 
@@ -43,7 +42,6 @@ int traj_index = 0; // The current index in the trajectory vector.
 unsigned long traj_start_time = 0; // Timestamp for when trajectory execution begins (after the hold).
 unsigned long initial_hold_start_time = 0; // Timestamp for when the initial hold period starts.
 
-// ----------------------------------
 
 // ----------------------
 // Servo and Motor Control (instantiation of externs from config.h)
@@ -99,7 +97,6 @@ char target_pose_msg_names_data[3][32]; // Max name length for each string
 double target_pose_msg_positions_array[3];
 double target_pose_msg_velocities_array[3];
 double target_pose_msg_efforts_array[3];
-
 
 
 // ----------------------
@@ -446,11 +443,6 @@ void loop() {
     actual_positions[1] = Ax2toAngle(Enc2.read()); // Pitch
     actual_positions[2] = Ax3toAngle(Enc3.read()); // Insertion
 
-    // --- REMOVED: Serial Command for Mode Toggle ---
-    // The control_mode is now fixed at compile time or set once in setup().
-    // Remove the entire 'if (Serial.available())' block.
-    // ------------------------------------------
-
     // 2. Determine desired target angles/positions based on control_mode
     double target_roll_angle = 0.0;
     double target_pitch_angle = 0.0;
@@ -568,24 +560,18 @@ void loop() {
     }
 
     // 3. Calculate gains using gain scheduling functions
-    // Gains pitch_gains = getPitchGains(actual_positions[1], actual_positions[0]); // Pitch gains
-    // float pitch_lqi_gains[3] = {static_cast<float>(pitch_gains.Kp),
-    //     static_cast<float>(pitch_gains.Kd),
-    //     static_cast<float>(pitch_gains.Ki)};
-    // Gains roll_gains = getRollGains(actual_positions[1], actual_positions[0]);
-    // float roll_lqr_gains[2] = {static_cast<float>(roll_gains.Kp),
-    // static_cast<float>(roll_gains.Kd)};
-
-    // P control gains
-    float roll_lqr_gains[2] = {35.0f,0.0f};
-    float pitch_lqi_gains[3] = {60.0f,0.0f,0.0f};
-
-
+    Gains pitch_gains = getPitchGains(actual_positions[1], actual_positions[0]); // Pitch gains
+    float pitch_lqi_gains[3] = {static_cast<float>(pitch_gains.Kp),
+        static_cast<float>(pitch_gains.Kd),
+        static_cast<float>(pitch_gains.Ki)};
+    Gains roll_gains = getRollGains(actual_positions[1], actual_positions[0]);
+    float roll_lqr_gains[2] = {static_cast<float>(roll_gains.Kp),
+    static_cast<float>(roll_gains.Kd)};
     
 
     // 4. Command joints using LQI controller
-    // Roll axis control
 
+    // Roll axis control
     float roll_speed = compute_roll_LQR_control(
         roll_lqr_gains,       // Gains for roll
         static_cast<float>(target_roll_angle),    // Target roll angle (from chosen mode)
@@ -600,26 +586,20 @@ void loop() {
         static_cast<float>(target_pitch_angle),   // Target pitch angle (from chosen mode)
         static_cast<float>(actual_positions[1])   // Actual pitch position
     );
-    // Hard-coded pitch gains
-    // float pitch_lqi_gains[3] = {60.0f, 0.0f, 0.0f}; // Kp, Kd, Ki
-    // float pitch_speed = compute_pitch_LQI_control(
-    //     pitch_lqi_gains,                      // Gains for pitch
-    //     static_cast<float>(target_pitch_angle), // Target pitch angle
-    //     static_cast<float>(actual_positions[1]) // Actual pitch position
-    // );
+
     motor2.setSpeed(static_cast<int16_t>(pitch_speed)); // Apply pitch control
     commanded_speeds[1] = pitch_speed; // Store commanded pitch speed for telemetry
 
     // Insertion axis control (motor3)
-        // float insertion_error = static_cast<float>(target_insertion_position - actual_positions[2]);
-        // float insertion_speed = 30.0f * insertion_error; // Calculate speed based on error (P-control like)
+        float insertion_error = static_cast<float>(target_insertion_position - actual_positions[2]);
+        float insertion_speed = 30.0f * insertion_error; // Calculate speed based on error (P-control like)
 
-        // // Clamp the speed to the range [-100, 100] (assuming motor.setSpeed takes -100 to 100)
-        // insertion_speed = std::max(-100.0f, std::min(100.0f, insertion_speed));
+        // Clamp the speed to the range [-100, 100] (assuming motor.setSpeed takes -100 to 100)
+        insertion_speed = std::max(-100.0f, std::min(100.0f, insertion_speed));
 
-        // // Apply insertion control
-        // motor3.setSpeed(static_cast<int16_t>(insertion_speed)); // Apply clamped speed
-        // commanded_speeds[2] = insertion_speed; // Store commanded insertion speed for telemetry
+        // Apply insertion control
+        motor3.setSpeed(static_cast<int16_t>(insertion_speed)); // Apply clamped speed
+        commanded_speeds[2] = insertion_speed; // Store commanded insertion speed for telemetry
 
 
 
@@ -645,7 +625,11 @@ void loop() {
     // 8. Maintain loop timing
     delay(2); // Sampling rate of 500 Hz (2 ms per iteration)
 }
-// PRBS Characterization DO NOT DELETE
+
+// ----------------------
+// PRBS Characterization, code is commented out to avoid confusion with the main control loop.
+// This code is for testing the PRBS control algorithm and should not be used in production.
+// Uncomment to use for testing PRBS control algorithm.
 // void loop() {
 //     static unsigned long start_time = millis(); // Record the start time
 //     static bool prbs_started = false;          // Flag to indicate PRBS has started
@@ -733,255 +717,3 @@ void loop() {
 //     // 5. Maintain loop timing
 //     delay(2); // Sampling rate of 500 Hz (2 ms per iteration)
 // }
-// Control algorithm testing, do not delete
-// void loop() {
-//     static unsigned long start_time = millis(); // Record the start time
-
-//     // 1. Read filtered encoder values
-//     actual_positions[0] = Ax1toAngle(Enc1.read()); // Roll
-//     actual_positions[1] = Ax2toAngle(Enc2.read()); // Pitch
-//     actual_positions[2] = Ax3toAngle(Enc3.read()); // Insertion
-
-//     unsigned long current_time = millis();
-//     float elapsed_time = (current_time - start_time) / 1000.0f; // Elapsed time in seconds
-
-//     // == Calculate Target Positions ==
-//     const float pitch_amplitude = 15.0f; // Amplitude for pitch sine wave
-//     const float roll_amplitude = 20.0f;  // Amplitude for roll sine wave
-//     const float pitch_period = 10.0f;     // Period for pitch sine wave (seconds)
-//     const float roll_period = 11.0f;      // Period for roll sine wave (seconds)
-
-//     // Calculate target positions using sine wave equations
-//     float target_pitch_angle = pitch_amplitude * sin((2.0f * PI / pitch_period) * elapsed_time);
-//     float target_roll_angle = roll_amplitude * sin((2.0f * PI / roll_period) * elapsed_time);
-//     commanded_positions[0] = target_roll_angle; // Store commanded roll position
-//     commanded_positions[1] = target_pitch_angle; // Store commanded pitch position
-
-//     // == Roll Axis Control ==
-//     // Get roll gains based on the current roll and pitch angles
-//     Gains roll_gains = getRollGains(actual_positions[0], actual_positions[1]);
-
-//     // Publish the roll gains as a debug message
-//     publish_gains(roll_gains.Kp, roll_gains.Kd);
-
-//     // Create a temporary array for the gains
-//     float roll_lqr_gains[2] = {static_cast<float>(roll_gains.Kp), static_cast<float>(roll_gains.Kd)};
-
-//     // Use the calculated gains for LQR control
-//     float roll_speed = compute_roll_LQR_control(
-//         roll_lqr_gains,       // Pass the array of gains
-//         target_roll_angle,    // Target position for roll
-//         actual_positions[0]   // Actual position (roll)
-//     );
-//     motor1.setSpeed(static_cast<int16_t>(roll_speed)); // Apply LQR control to motor1
-//     commanded_speeds[0] = roll_speed; // Store commanded speed for telemetry
-
-//     // == Pitch Axis Control ==
-//     // Get pitch gains based on the current pitch and roll angles
-//     Gains pitch_gains = getPitchGains(actual_positions[1], actual_positions[0]);
-
-//     // Publish the pitch gains as a debug message
-//     char debug_message[128];
-//     snprintf(debug_message, sizeof(debug_message), "Pitch Gains - Kp: %.2f, Kd: %.2f, Ki: %.2f", 
-//              pitch_gains.Kp, pitch_gains.Kd, pitch_gains.Ki);
-//     debug_msg.data.size = strlen(debug_message);
-//     strncpy(debug_msg.data.data, debug_message, debug_msg.data.capacity);
-//     RCSOFTCHECK(rcl_publish(&debug_publisher, &debug_msg, NULL));
-
-//     // Create a temporary array for the gains
-//     float pitch_lqi_gains[3] = {static_cast<float>(pitch_gains.Kp), 
-//                                 static_cast<float>(pitch_gains.Kd), 
-//                                 static_cast<float>(pitch_gains.Ki)};
-
-//     // Use the calculated gains for LQI control
-//     float pitch_speed = compute_pitch_LQI_control(
-//         pitch_lqi_gains, 
-//         target_pitch_angle, // Target position for pitch
-//         actual_positions[1] // Actual position (pitch)
-//     );
-//     motor2.setSpeed(static_cast<int16_t>(pitch_speed)); // Apply LQI control to motor2
-//     commanded_speeds[1] = pitch_speed; // Store commanded speed for telemetry
-
-//     // 2. Read raw sensor data
-//     read_encoder_data(&sensor_data_msg);
-//     RCSOFTCHECK(rcl_publish(&sensor_data_publisher, &sensor_data_msg, NULL));
-
-//     // 3. Process incoming ROS messages
-//     RCSOFTCHECK(rclc_executor_spin_some(&executor, 10));
-
-//     // 4. Publish telemetry
-//     publish_joint_telemetry(actual_positions, commanded_positions, commanded_speeds);
-
-//     // 5. Maintain loop timing
-//     delay(2); // Sampling rate of 500 Hz (2 ms per iteration)
-// }
-
-// Roll step response script Do not delete
-// void loop() {
-//     static unsigned long start_time = millis(); // Record the start time
-//     static unsigned long phase_start_time = millis(); // Track the start time of each phase
-//     static float last_roll_speed = 0.0f; // Store the last commanded roll speed
-//     static int phase = 0; // Track the current phase (0: LQR, 1: Hold speed, 2: Double speed)
-
-//     // 1. Read filtered encoder values
-//     actual_positions[0] = Ax1toAngle(Enc1.read()); // Roll
-//     actual_positions[1] = Ax2toAngle(Enc2.read()); // Pitch
-//     actual_positions[2] = Ax3toAngle(Enc3.read()); // Insertion
-
-//     unsigned long current_time = millis();
-//     unsigned long elapsed_time = current_time - phase_start_time;
-
-//     // Phase 0: LQR control for the first 10 seconds
-//     if (phase == 0) {
-//         if (elapsed_time < 10000) { // 10 seconds
-//             float target_roll_angle = -15.0f; // Command the roll axis to -15 degrees
-//             float roll_lqr_gains[2] = {200.1886f, 3.0860f}; // Gains for position error and velocity
-//             float roll_speed = compute_roll_LQR_control(
-//                 roll_lqr_gains, 
-//                 target_roll_angle, // Target position for roll
-//                 actual_positions[0] // Actual position (roll)
-//             );
-//             motor1.setSpeed(static_cast<int16_t>(roll_speed)); // Apply LQR control to motor1
-//             commanded_speeds[0] = roll_speed; // Store commanded speed for telemetry
-
-//             // Store the last commanded roll speed
-//             last_roll_speed = roll_speed;
-//         } else {
-//             // Transition to Phase 1
-//             phase = 1;
-//             phase_start_time = millis(); // Reset phase start time
-//         }
-//     }
-
-//     // Phase 1: Hold the last commanded speed for 5 seconds
-//     else if (phase == 1) {
-//         if (elapsed_time < 5000) { // 5 seconds
-//             motor1.setSpeed(static_cast<int16_t>(last_roll_speed)); // Maintain the last commanded speed
-//             commanded_speeds[0] = last_roll_speed; // Store commanded speed for telemetry
-//         } else {
-//             // Transition to Phase 2
-//             phase = 2;
-//             phase_start_time = millis(); // Reset phase start time
-//         }
-//     }
-
-//     // Phase 2: Double the last commanded speed
-//     else if (phase == 2) {
-//         float doubled_speed = 1.9f * last_roll_speed; // Double the last commanded speed
-//         motor1.setSpeed(static_cast<int16_t>(doubled_speed)); // Apply the doubled speed to motor1
-//         commanded_speeds[0] = doubled_speed; // Store commanded speed for telemetry
-
-//         // No further transitions; this phase continues indefinitely
-//     }
-
-//     // == Command the Pitch Axis ==
-//     float target_pitch_angle = 15.0f; // Command the pitch axis to -15 degrees
-//     float pitch_lqi_gains[3] = {220.6809f, 0.3174f, 0.1414f}; // Gains for position error, velocity, and integral
-//     float pitch_speed = compute_pitch_LQI_control(
-//         pitch_lqi_gains, 
-//         target_pitch_angle, // Target position for pitch
-//         actual_positions[1] // Actual position (pitch)
-//     );
-//     motor2.setSpeed(static_cast<int16_t>(pitch_speed)); // Apply LQI control to motor2
-//     commanded_speeds[1] = pitch_speed; // Store commanded speed for telemetry
-
-//     // 2. Read raw sensor data
-//     read_encoder_data(&sensor_data_msg);
-//     RCSOFTCHECK(rcl_publish(&sensor_data_publisher, &sensor_data_msg, NULL));
-
-//     // 3. Process incoming ROS messages
-//     RCSOFTCHECK(rclc_executor_spin_some(&executor, 10));
-
-//     // 4. Publish telemetry
-//     publish_joint_telemetry(actual_positions, commanded_positions, commanded_speeds);
-
-//     // 5. Maintain loop timing
-//     delay(2); // Sampling rate of 500 Hz (2 ms per iteration)
-// }
-
-
-/* PRBS Characterization. Do not delete
-void loop() {
-    static unsigned long start_time = millis();
-    static bool prbs_started = false;2
-    static float prbs_value = 0.0f;
-
-    // PRBS parameters
-    const float prbs_amplitude = 15.0f;
-
-    // Array of toggle intervals in milliseconds
-    const unsigned long prbs_intervals[] = {5, 10, 20, 30, 50, 70, 100, 250, 500, 1000};
-    const int num_intervals = sizeof(prbs_intervals) / sizeof(prbs_intervals[0]);
-    static int current_interval_index = 0;
-
-    unsigned long current_time = millis();
-    float elapsed_time = (current_time - start_time) / 1000.0f;
-
-    // 1. Read filtered encoder values
-    actual_positions[0] = Ax1toAngle(Enc1.read());
-    actual_positions[1] = Ax2toAngle(Enc2.read());
-    actual_positions[2] = Ax3toAngle(Enc3.read());
-
-    // == Roll Axis LQR ==
-    float roll_lqr_gains[2] = {255.1886f, 4.0860f};
-    float roll_speed = compute_roll_LQR_control(
-        roll_lqr_gains, 
-        0.0f,
-        actual_positions[0]
-    );
-    motor1.setSpeed(static_cast<int16_t>(roll_speed));
-    commanded_speeds[0] = roll_speed;
-
-    // == Pitch Axis ==
-    if (elapsed_time < 15.0f) {
-        float pitch_lqr_gains[2] = {50.4189f, 0.590f};
-        float pitch_speed = compute_pitch_LQR_control(
-            pitch_lqr_gains, 
-            0.0f,
-            actual_positions[1]
-        );
-        motor2.setSpeed(static_cast<int16_t>(pitch_speed));
-        commanded_speeds[1] = pitch_speed;
-    } else {
-        if (!prbs_started) {
-            prbs_started = true;
-            prbs_last_toggle_time = current_time;
-        }
-
-        // Check for PRBS toggle
-        if ((current_time - prbs_last_toggle_time) >= prbs_intervals[current_interval_index]) {
-            prbs_value = (random(0, 2) == 0) ? prbs_amplitude : -prbs_amplitude;
-            prbs_last_toggle_time = current_time;
-
-            // Cycle to next interval value
-            current_interval_index = (current_interval_index + 1) % num_intervals;
-        }
-
-        // LQR + PRBS control
-        float pitch_lqr_gains[2] = {50.4189f, 0.590f};
-        float pitch_speed = compute_pitch_LQR_control(
-            pitch_lqr_gains, 
-            0.0f,
-            actual_positions[1]
-        );
-
-        float prbs_control_input = pitch_speed + prbs_value;
-
-        motor2.setSpeed(static_cast<int16_t>(prbs_control_input));
-        commanded_speeds[1] = prbs_control_input;
-    }
-
-    // 2. Read raw sensor data
-    read_encoder_data(&sensor_data_msg);
-    RCSOFTCHECK(rcl_publish(&sensor_data_publisher, &sensor_data_msg, NULL));
-
-    // 3. Process incoming ROS messages
-    RCSOFTCHECK(rclc_executor_spin_some(&executor, 10));
-
-    // 4. Publish telemetry
-    publish_joint_telemetry(actual_positions, commanded_positions, commanded_speeds);
-
-    // 5. Maintain loop timing
-    delay(2);
-}
- */
